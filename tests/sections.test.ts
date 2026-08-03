@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { foreignLanguageOf } from '../src/core/amenities.js';
 import { aggregate, EMPTY_ALIASES } from '../src/core/aggregate.js';
-import { buildSections, unfilteredSources, DEFAULT_SECTION_OPTIONS } from '../src/core/sections.js';
+import {
+  buildSections,
+  isSpecialEvent,
+  unfilteredSources,
+  DEFAULT_SECTION_OPTIONS,
+} from '../src/core/sections.js';
 import type { AggregatedMovie, Amenity, VenueDay } from '../src/core/types.js';
 
 describe('foreignLanguageOf', () => {
@@ -96,9 +101,9 @@ describe('buildSections', () => {
 
   it('keeps everything in one table when the options are off', () => {
     const sections = buildSections(movies, {
+      ...DEFAULT_SECTION_OPTIONS,
       separateDriveIn: false,
       separateLibrary: false,
-      foreign: 'inline',
     });
     expect(sections).toHaveLength(1);
     expect(sections[0]?.movies).toHaveLength(4);
@@ -139,5 +144,96 @@ describe('unfilteredSources', () => {
     expect([...unfilteredSources({ ...DEFAULT_SECTION_OPTIONS, separateLibrary: false })]).toEqual([
       'stars-and-stripes',
     ]);
+  });
+});
+
+describe('isSpecialEvent', () => {
+  const movie = (over: Partial<AggregatedMovie>): AggregatedMovie => ({
+    key: 'k',
+    title: 'X',
+    href: '/x',
+    theaters: ['a'],
+    dates: ['2026-08-04'],
+    formats: new Map(),
+    optional: new Map(),
+    isEvent: false,
+    sources: ['fandango'],
+    languages: [],
+    foreign: false,
+    releaseYear: 2026,
+    mergedHrefs: [],
+    ...over,
+  });
+
+  it('treats a missing year as a catalogue booking', () => {
+    // Fandango omits the year on repertory titles: "Paddington 2",
+    // "The Untouchables", "Billy Madison", "CatVideoFest" all arrive without
+    // one, which is why the year carries most of the weight here.
+    for (const title of ['Paddington 2', 'The Untouchables', 'Billy Madison', 'CatVideoFest']) {
+      expect(isSpecialEvent(movie({ title, releaseYear: null }), 2026), title).toBe(true);
+    }
+  });
+
+  it('does not mistake an ordinary title for a festival', () => {
+    // "Manifest" ends in "fest"; the pattern must not fire on it.
+    expect(isSpecialEvent(movie({ title: 'Manifest', releaseYear: 2026, dates: ['a', 'b', 'c'] }), 2026)).toBe(
+      false,
+    );
+  });
+
+  it('flags amenity-marked events', () => {
+    expect(isSpecialEvent(movie({ isEvent: true, title: 'Some Broadcast' }), 2026)).toBe(true);
+  });
+
+  it('flags mystery and secret screenings, which carry no marker', () => {
+    for (const title of [
+      'Santikos Monday Mystery Movie',
+      'REGAL: Monday Mystery Movie',
+      'Cinemark Secret Movie Series',
+      'SECRET FLIX',
+      'Grateful Dead Meet-Up At The Movies 2026',
+      'Aida: Met Summer Encore 2026',
+    ]) {
+      expect(isSpecialEvent(movie({ title, releaseYear: 2026 }), 2026), title).toBe(true);
+    }
+  });
+
+  it('flags a revival of an older film on a short run', () => {
+    expect(
+      isSpecialEvent(movie({ title: 'The Sandlot', releaseYear: 1993, dates: ['d1'] }), 2026),
+    ).toBe(true);
+    expect(
+      isSpecialEvent(
+        movie({ title: 'The Goonies', releaseYear: 1985, dates: ['d1', 'd2'] }),
+        2026,
+      ),
+    ).toBe(true);
+  });
+
+  it('leaves current releases alone', () => {
+    for (const title of ['Spider-Man: Brand New Day', 'Moana', 'Super Troopers 3', 'Evil Dead Burn']) {
+      expect(isSpecialEvent(movie({ title, releaseYear: 2026, dates: ['a', 'b', 'c'] }), 2026), title).toBe(
+        false,
+      );
+    }
+  });
+
+  it('leaves a recent film still playing a real run alone', () => {
+    // Despicable Me 4 is two years old but plays five venues across three days;
+    // that is a late leg of its release, not a revival.
+    expect(
+      isSpecialEvent(
+        movie({ title: 'Despicable Me 4', releaseYear: 2024, dates: ['a', 'b', 'c'] }),
+        2026,
+      ),
+    ).toBe(false);
+  });
+
+  it('only builds the events table when asked', () => {
+    const revival = movie({ title: 'The Goonies', releaseYear: 1985, dates: ['d1'] });
+    const inline = buildSections([revival], DEFAULT_SECTION_OPTIONS);
+    expect(inline.find((s) => s.id === 'events')).toBeUndefined();
+    const split = buildSections([revival], { ...DEFAULT_SECTION_OPTIONS, separateEvents: true });
+    expect(split.find((s) => s.id === 'events')?.movies).toHaveLength(1);
   });
 });

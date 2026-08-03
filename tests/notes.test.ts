@@ -22,6 +22,7 @@ function movie(over: Partial<AggregatedMovie> = {}): AggregatedMovie {
     sources: ['fandango'],
     languages: [],
     foreign: false,
+    releaseYear: 2026,
     mergedHrefs: [],
     ...over,
   };
