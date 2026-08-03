@@ -90,7 +90,7 @@ async function harvestSeedDate(
   try {
     // Announced before the request, not after: a page takes ~15s and silence
     // reads as a hung app.
-    report(`${date} · loading`);
+    report(`Fandango · ${date} · loading`);
     await session.throttle();
     await gotoWithRetry(page, `${SITE}/${zip}_movietimes?date=${date}`);
     await page
@@ -98,7 +98,7 @@ async function harvestSeedDate(
       .catch(() => undefined);
 
     for (let pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
-      report(`${date} · page ${pageNo} · reading showtimes`);
+      report(`Fandango · ${date} · page ${pageNo} · reading showtimes`);
       await exhaustLazyLoad(page);
       const html = await page.content();
       const parsed = parseShowtimesPage(html, date);
@@ -122,7 +122,7 @@ async function harvestSeedDate(
       const furthest = Math.max(...distances);
       if (fresh.length > 0) {
         report(
-          `${date} · ${zip} · page ${pageNo} · ${fresh.length} theaters (${nearest.toFixed(2)}–${furthest.toFixed(2)} mi)`,
+          `Fandango · ${date} · ${zip} · page ${pageNo} · ${fresh.length} theaters (${nearest.toFixed(2)}–${furthest.toFixed(2)} mi)`,
         );
       }
 
@@ -223,7 +223,7 @@ export async function harvestFandango(
     for (const seed of candidates) {
       visited.add(seed);
       seeds.push(seed);
-      onProgress(`expanding search to ${seed}`, 1, total);
+      onProgress(`Fandango · expanding search to ${seed}`, 1, total);
       const extra = await harvestSeedDate(
         session,
         seed,
@@ -274,7 +274,7 @@ export async function harvestFandango(
       },
     );
     done++;
-    onProgress(`${job.date} · done`, done, jobs.length);
+    onProgress(`Fandango · ${job.date} · done`, done, jobs.length);
     return result;
   });
 

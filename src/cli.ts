@@ -4,6 +4,7 @@ import { Command, InvalidArgumentError } from 'commander';
 import { loadAliases } from './core/config.js';
 import { renderMarkdown, renderWarnings } from './core/markdown.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
+import { unfilteredSources, type ForeignMode, type SectionOptions } from './core/sections.js';
 import type { ProgressUpdate, RenderOptions, ScrapeRequest } from './core/types.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
 import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
@@ -44,6 +45,9 @@ interface CliOptions {
   quiet: boolean;
   sources: string[];
   concurrency: number;
+  separateDriveIn: boolean;
+  separateLibrary: boolean;
+  foreign: ForeignMode;
 }
 
 const program = new Command()
@@ -70,6 +74,19 @@ const program = new Command()
     positiveNumber,
     3,
   )
+  .option('--no-separate-drive-in', 'keep drive-in films in the main table')
+  .option('--no-separate-library', 'keep library screenings in the main table')
+  .option(
+    '--foreign <mode>',
+    'non-English releases: inline, separate or exclude',
+    (value: string) => {
+      if (value !== 'inline' && value !== 'separate' && value !== 'exclude') {
+        throw new InvalidArgumentError('expected inline, separate or exclude');
+      }
+      return value;
+    },
+    'inline',
+  )
   .option('--headed', 'run the browser headed, for debugging', false)
   .option('-q, --quiet', 'suppress progress output', false);
 
@@ -88,6 +105,12 @@ const request: ScrapeRequest = {
   from,
   to,
   radiusMiles: options.radius,
+};
+
+const sectionOptions: SectionOptions = {
+  separateDriveIn: options.separateDriveIn,
+  separateLibrary: options.separateLibrary,
+  foreign: options.foreign,
 };
 
 const renderOptions: RenderOptions = {
@@ -134,10 +157,11 @@ try {
       keepYears: options.keepYears,
       timezone: options.timezone,
       onProgress: progress,
+      unfilteredSources: unfilteredSources(sectionOptions),
     },
   );
 
-  const table = renderMarkdown(result, renderOptions, aliases.theaterNames);
+  const table = renderMarkdown(result, renderOptions, aliases.theaterNames, sectionOptions);
   const warnings = renderWarnings(result);
   const output = warnings ? `${table}\n\n${warnings}\n` : `${table}\n`;
 

@@ -6,6 +6,7 @@ import { streamSSE } from 'hono/streaming';
 import { loadAliases } from './core/config.js';
 import { renderMarkdown, renderRows } from './core/markdown.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
+import { unfilteredSources, type ForeignMode, type SectionOptions } from './core/sections.js';
 import type { RenderOptions, ScrapeRequest } from './core/types.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
 import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
@@ -24,6 +25,9 @@ interface ScrapeBody {
   showLanguage?: unknown;
   sources?: unknown;
   concurrency?: unknown;
+  separateDriveIn?: unknown;
+  separateLibrary?: unknown;
+  foreign?: unknown;
 }
 
 interface ParsedBody {
@@ -31,6 +35,7 @@ interface ParsedBody {
   options: RenderOptions;
   sources: string[];
   concurrency: number;
+  sections: SectionOptions;
 }
 
 function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
@@ -53,9 +58,17 @@ function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
   const concurrency =
     typeof body.concurrency === 'number' && body.concurrency >= 1 ? body.concurrency : 3;
 
+  const foreign: ForeignMode =
+    body.foreign === 'separate' || body.foreign === 'exclude' ? body.foreign : 'inline';
+
   return {
     sources,
     concurrency,
+    sections: {
+      separateDriveIn: body.separateDriveIn !== false,
+      separateLibrary: body.separateLibrary !== false,
+      foreign,
+    },
     request: { zip, from, to, radiusMiles: radius },
     options: {
       keepYears: body.keepYears === true,
@@ -82,7 +95,7 @@ app.post('/api/scrape', async (c) => {
   const parsed = parseBody(await c.req.json<ScrapeBody>().catch(() => ({})));
   if ('error' in parsed) return c.json({ error: parsed.error }, 400);
 
-  const { request, options, sources, concurrency } = parsed;
+  const { request, options, sources, concurrency, sections } = parsed;
   return streamSSE(c, async (stream) => {
     const session = new BrowserSession({ ...DEFAULT_BROWSER_OPTIONS, timezone: TIMEZONE });
     const send = async (event: string, data: unknown): Promise<void> => {
@@ -107,6 +120,7 @@ app.post('/api/scrape', async (c) => {
         aliases,
         keepYears: options.keepYears,
         timezone: TIMEZONE,
+        unfilteredSources: unfilteredSources(sections),
         onProgress: (update) => {
           writes = writes.then(() => send('progress', update));
         },
@@ -119,15 +133,17 @@ app.post('/api/scrape', async (c) => {
         horizon: result.horizon,
         theaters: result.theaters,
         warnings: result.warnings,
-        rows: renderRows(result, options, aliases.theaterNames).map((row) => ({
+        rows: renderRows(result, options, aliases.theaterNames, sections).map((row) => ({
           title: row.movie.title,
           url: row.url,
           notes: row.notes,
           theaterCount: row.movie.theaters.length,
           dateCount: row.movie.dates.length,
           isEvent: row.movie.isEvent,
+          section: row.section ?? 'main',
+          sectionHeading: row.sectionHeading ?? null,
         })),
-        markdown: renderMarkdown(result, options, aliases.theaterNames),
+        markdown: renderMarkdown(result, options, aliases.theaterNames, sections),
       });
     } catch (error) {
       await send('failed', { message: error instanceof Error ? error.message : String(error) });
