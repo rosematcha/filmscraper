@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { aggregate, EMPTY_ALIASES } from '../src/core/aggregate.js';
 import { renderMarkdown, sortMovies, tierOf } from '../src/core/markdown.js';
+import { DEFAULT_SECTION_OPTIONS } from '../src/core/sections.js';
 import { expiredTodayWarning } from '../src/core/pipeline.js';
 import { DEFAULT_RENDER_OPTIONS, type ScrapeResult, type Theater, type VenueDay } from '../src/core/types.js';
 import { fixtureVenueDays } from './helpers.js';
@@ -35,9 +36,20 @@ function resultFor(dates: string[]): ScrapeResult {
   };
 }
 
+/** One flat table, so this suite tests row rendering rather than sectioning. */
+const FLAT = {
+  ...DEFAULT_SECTION_OPTIONS,
+  separateDriveIn: false,
+  separateLibrary: false,
+  separateEvents: false,
+  separateOpenCaptions: false,
+  foreign: 'inline' as const,
+  currentYear: 2026,
+};
+
 describe('golden table — 78205, Aug 4–5 2026, 15 mi', () => {
   const result = resultFor(['2026-08-04', '2026-08-05']);
-  const table = renderMarkdown(result, DEFAULT_RENDER_OPTIONS, THEATER_NAMES);
+  const table = renderMarkdown(result, DEFAULT_RENDER_OPTIONS, THEATER_NAMES, FLAT);
 
   it('matches the recorded output', () => {
     expect(table).toMatchSnapshot();

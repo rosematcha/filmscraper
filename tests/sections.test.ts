@@ -3,7 +3,9 @@ import { foreignLanguageOf } from '../src/core/amenities.js';
 import { aggregate, EMPTY_ALIASES } from '../src/core/aggregate.js';
 import {
   buildSections,
+  hasOpenCaptions,
   isSpecialEvent,
+  openCaptionEntry,
   unfilteredSources,
   DEFAULT_SECTION_OPTIONS,
 } from '../src/core/sections.js';
@@ -89,7 +91,11 @@ describe('buildSections', () => {
     sections.find((s) => s.id === id);
 
   it('breaks the drive-in and library into their own tables', () => {
-    const sections = buildSections(movies, DEFAULT_SECTION_OPTIONS);
+    const sections = buildSections(movies, {
+      ...DEFAULT_SECTION_OPTIONS,
+      separateEvents: false,
+      foreign: 'inline',
+    });
     expect(find(sections, 'drive-in')?.movies.map((m) => m.title)).toEqual(['Drive-In Only']);
     expect(find(sections, 'library')?.movies.map((m) => m.title)).toEqual(['Library Only']);
     // Foreign stays inline by default.
@@ -104,6 +110,8 @@ describe('buildSections', () => {
       ...DEFAULT_SECTION_OPTIONS,
       separateDriveIn: false,
       separateLibrary: false,
+      separateEvents: false,
+      foreign: 'inline',
     });
     expect(sections).toHaveLength(1);
     expect(sections[0]?.movies).toHaveLength(4);
@@ -126,13 +134,21 @@ describe('buildSections', () => {
       day(undefined, 'Spider-Man', [group([])]),
       { ...day('stars-and-stripes', 'Spider-Man', [group([])]), theater: { name: 'Drive-In', href: '', miles: 30 } },
     ]);
-    const sections = buildSections(shared, DEFAULT_SECTION_OPTIONS);
+    const sections = buildSections(shared, {
+      ...DEFAULT_SECTION_OPTIONS,
+      separateEvents: false,
+      foreign: 'inline',
+    });
     expect(find(sections, 'main')?.movies.map((m) => m.title)).toEqual(['Spider-Man']);
     expect(find(sections, 'drive-in')?.movies.map((m) => m.title)).toEqual(['Spider-Man']);
   });
 
   it('keeps a venue-exclusive film out of the main table', () => {
-    const sections = buildSections(movies, DEFAULT_SECTION_OPTIONS);
+    const sections = buildSections(movies, {
+      ...DEFAULT_SECTION_OPTIONS,
+      separateEvents: false,
+      foreign: 'inline',
+    });
     expect(find(sections, 'main')?.movies.map((m) => m.title)).not.toContain('Drive-In Only');
     expect(find(sections, 'main')?.movies.map((m) => m.title)).not.toContain('Library Only');
   });
@@ -156,6 +172,7 @@ describe('isSpecialEvent', () => {
     dates: ['2026-08-04'],
     formats: new Map(),
     optional: new Map(),
+    optionalDates: new Map(),
     isEvent: false,
     sources: ['fandango'],
     languages: [],
@@ -231,9 +248,81 @@ describe('isSpecialEvent', () => {
 
   it('only builds the events table when asked', () => {
     const revival = movie({ title: 'The Goonies', releaseYear: 1985, dates: ['d1'] });
-    const inline = buildSections([revival], DEFAULT_SECTION_OPTIONS);
+    const inline = buildSections([revival], { ...DEFAULT_SECTION_OPTIONS, separateEvents: false });
     expect(inline.find((s) => s.id === 'events')).toBeUndefined();
     const split = buildSections([revival], { ...DEFAULT_SECTION_OPTIONS, separateEvents: true });
     expect(split.find((s) => s.id === 'events')?.movies).toHaveLength(1);
+  });
+});
+
+describe('open-caption table', () => {
+  const withOc = (title: string, oc: boolean): AggregatedMovie => ({
+    key: title,
+    title,
+    href: `/${title}`,
+    theaters: ['Regal'],
+    dates: ['2026-08-04', '2026-08-05'],
+    formats: new Map(),
+    optional: oc ? new Map([['Open caption', ['Regal']]]) : new Map(),
+    optionalDates: oc ? new Map([['Open caption', ['2026-08-05']]]) : new Map(),
+    isEvent: false,
+    sources: ['fandango'],
+    languages: [],
+    foreign: false,
+    releaseYear: 2026,
+    mergedHrefs: [],
+  });
+  const films = [withOc('Captioned', true), withOc('Plain', false)];
+
+  it('is absent unless asked for', () => {
+    const sections = buildSections(films, DEFAULT_SECTION_OPTIONS);
+    expect(sections.find((s) => s.id === 'open-captions')).toBeUndefined();
+  });
+
+  it('lists captioned films without removing them from the main table', () => {
+    // Duplication is intended: the film still has ordinary screenings.
+    const sections = buildSections(films, {
+      ...DEFAULT_SECTION_OPTIONS,
+      separateOpenCaptions: true,
+    });
+    expect(sections.find((s) => s.id === 'open-captions')?.movies.map((m) => m.title)).toEqual([
+      'Captioned',
+    ]);
+    expect(sections.find((s) => s.id === 'main')?.movies.map((m) => m.title).sort()).toEqual([
+      'Captioned',
+      'Plain',
+    ]);
+  });
+
+  it('narrows the captioned entry to its own venues and dates', () => {
+    // All poodles are dogs: the captioned booking is a subset of the run, so it
+    // must not inherit the film's full twenty-theater reach.
+    const wide: AggregatedMovie = {
+      ...withOc('Spider-Man', true),
+      theaters: ['Regal', 'Palladium', 'Rivercenter'],
+      dates: ['2026-08-04', '2026-08-05', '2026-08-06'],
+      formats: new Map([['IMAX', ['Rivercenter']]]),
+    };
+    const entry = openCaptionEntry(wide);
+    expect(entry.theaters).toEqual(['Regal']);
+    expect(entry.dates).toEqual(['2026-08-05']);
+    // An IMAX booking elsewhere says nothing about the captioned screening.
+    expect(entry.formats.size).toBe(0);
+  });
+
+  it('ignores a film whose caption list is empty', () => {
+    const empty = { ...withOc('Plain', false), optional: new Map([['Open caption', []]]) };
+    expect(hasOpenCaptions(empty)).toBe(false);
+  });
+});
+
+describe('default section options', () => {
+  it('splits events and non-English releases out of the box', () => {
+    expect(DEFAULT_SECTION_OPTIONS.separateDriveIn).toBe(true);
+    expect(DEFAULT_SECTION_OPTIONS.separateLibrary).toBe(true);
+    expect(DEFAULT_SECTION_OPTIONS.separateEvents).toBe(true);
+    expect(DEFAULT_SECTION_OPTIONS.foreign).toBe('separate');
+    // Open captions duplicate rows, so that one stays opt-in.
+    expect(DEFAULT_SECTION_OPTIONS.separateOpenCaptions).toBe(false);
   });
 });

@@ -18,6 +18,7 @@ function movie(over: Partial<AggregatedMovie> = {}): AggregatedMovie {
     dates: [],
     formats: new Map(),
     optional: new Map(),
+    optionalDates: new Map(),
     isEvent: false,
     sources: ['fandango'],
     languages: [],
