@@ -171,6 +171,8 @@ export interface PipelineOptions {
   readonly keepYears: boolean;
   readonly timezone: string;
   readonly onProgress?: ProgressFn;
+  /** Sources exempt from the radius filter because they get their own table. */
+  readonly unfilteredSources?: ReadonlySet<string>;
 }
 
 export async function runPipeline(
@@ -205,8 +207,15 @@ export async function runPipeline(
   const partial = horizonWarning(horizon, dates);
   if (partial) warnings.push(partial);
 
-  const theaters = collectTheaters(days);
-  const movies = aggregate(days, theaters, {
+  // Venues broken out into their own table are wanted by name, so distance
+  // stops being a reason to drop them.
+  const exempt = options.unfilteredSources ?? new Set<string>();
+  const inRange = days.filter(
+    (d) => d.theater.miles <= request.radiusMiles || exempt.has(d.sourceId ?? 'fandango'),
+  );
+
+  const theaters = collectTheaters(inRange);
+  const movies = aggregate(inRange, theaters, {
     aliases: options.aliases,
     keepYears: options.keepYears,
   });

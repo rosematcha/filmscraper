@@ -1,4 +1,5 @@
 import { buildNotes } from './notes.js';
+import { buildSections, DEFAULT_SECTION_OPTIONS, type SectionOptions } from './sections.js';
 import type { AggregatedMovie, IsoDate, RenderOptions, ScrapeResult } from './types.js';
 
 const SITE = 'https://www.fandango.com';
@@ -34,6 +35,8 @@ export interface SortedMovie {
   readonly movie: AggregatedMovie;
   readonly notes: string;
   readonly url: string;
+  readonly section?: string;
+  readonly sectionHeading?: string | null;
 }
 
 /** Below this many venues a film reads as a limited run rather than a wide release. */
@@ -73,29 +76,53 @@ export function sortMovies(movies: readonly AggregatedMovie[]): AggregatedMovie[
   );
 }
 
+function toRow(
+  movie: AggregatedMovie,
+  result: ScrapeResult,
+  options: RenderOptions,
+  theaterNames: Readonly<Record<string, string>>,
+): SortedMovie {
+  return {
+    movie,
+    notes: buildNotes(movie, result.dates, result.knownFrom, result.horizon, options, theaterNames),
+    url: movieUrl(movie, result.dates, result.knownFrom, result.horizon),
+  };
+}
+
 export function renderRows(
   result: ScrapeResult,
   options: RenderOptions,
   theaterNames: Readonly<Record<string, string>>,
+  sectionOptions: SectionOptions = DEFAULT_SECTION_OPTIONS,
 ): SortedMovie[] {
-  return sortMovies(result.movies).map((movie) => ({
-    movie,
-    notes: buildNotes(movie, result.dates, result.knownFrom, result.horizon, options, theaterNames),
-    url: movieUrl(movie, result.dates, result.knownFrom, result.horizon),
-  }));
+  return buildSections(result.movies, sectionOptions).flatMap((section) =>
+    sortMovies(section.movies).map((movie) => ({
+      ...toRow(movie, result, options, theaterNames),
+      section: section.id,
+      sectionHeading: section.heading,
+    })),
+  );
 }
+
+const HEADER = ['| Movie | Link | Notes |', '|-------|------|-------|'];
 
 export function renderMarkdown(
   result: ScrapeResult,
   options: RenderOptions,
   theaterNames: Readonly<Record<string, string>>,
+  sectionOptions: SectionOptions = DEFAULT_SECTION_OPTIONS,
 ): string {
-  const rows = renderRows(result, options, theaterNames);
-  const lines = ['| Movie | Link | Notes |', '|-------|------|-------|'];
-  for (const row of rows) {
-    lines.push(`| ${cell(row.movie.title)} | [Showtimes](${row.url}) | ${cell(row.notes)} |`);
+  const blocks: string[] = [];
+  for (const section of buildSections(result.movies, sectionOptions)) {
+    if (section.movies.length === 0) continue;
+    const lines = section.heading ? [`### ${section.heading}`, '', ...HEADER] : [...HEADER];
+    for (const movie of sortMovies(section.movies)) {
+      const row = toRow(movie, result, options, theaterNames);
+      lines.push(`| ${cell(movie.title)} | [Showtimes](${row.url}) | ${cell(row.notes)} |`);
+    }
+    blocks.push(lines.join('\n'));
   }
-  return lines.join('\n');
+  return blocks.join('\n\n');
 }
 
 /** Warnings rendered beneath the table so a thin result is never mistaken for a complete one. */
