@@ -8,6 +8,30 @@ import {
 } from './api';
 import { ALIASES, loadDataset, renderDataset, type Dataset } from './dataset';
 import { DEFAULT_SECTION_OPTIONS } from '@core/core/sections.js';
+import { describeSchedule } from '@core/core/schedule.js';
+
+/**
+ * Labels for sources the API cannot describe, because a deployed site has no
+ * API at all and the dataset only carries ids.
+ */
+const SOURCE_LABELS: Record<string, string> = {
+  fandango: 'Fandango',
+  'slab-arthouse': 'Slab Cinema Arthouse',
+  'slab-outdoor': 'Slab Cinema (outdoor)',
+  'stars-and-stripes': 'Stars & Stripes Drive-In',
+  sapl: 'San Antonio Public Library',
+};
+
+/** "3h ago" — sources refresh on different cadences, so absolute times mislead. */
+function sinceLabel(iso: string): string {
+  const ms = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) return 'just now';
+  if (hours < 24) return `${String(hours)}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${String(days)}d ago`;
+}
 
 /** A week spans a full theatrical program change, so it is the useful default. */
 const DEFAULT_WINDOW_DAYS = 7;
@@ -528,6 +552,20 @@ export default function App(): React.JSX.Element {
       )}
 
       {error !== null && <p className="status error">{error}</p>}
+
+      {dataset && Object.keys(dataset.sources).length > 0 && (
+        <div className="status freshness">
+          {Object.entries(dataset.sources)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([id, stamp]) => (
+              <div className="track" key={id}>
+                <span className="track__label">{SOURCE_LABELS[id] ?? id}</span>
+                <span className="track__count">{sinceLabel(stamp.updatedAt)}</span>
+                <span className="track__now">{describeSchedule(id)}</span>
+              </div>
+            ))}
+        </div>
+      )}
 
       {view?.warnings.map((warning) => (
         <p className="warning" key={warning.kind + warning.message}>
