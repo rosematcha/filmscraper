@@ -54,6 +54,8 @@ export interface VenueDay {
   readonly theater: Theater;
   readonly date: IsoDate;
   readonly movies: readonly MovieListing[];
+  /** Which Source produced this, for provenance and horizon scoping. */
+  readonly sourceId?: string;
 }
 
 export interface ScrapeRequest {
