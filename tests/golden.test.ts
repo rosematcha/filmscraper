@@ -33,6 +33,7 @@ function resultFor(dates: string[]): ScrapeResult {
     theaters,
     movies: aggregate(days, theaters, { aliases: EMPTY_ALIASES, keepYears: false }),
     warnings: [],
+    days,
   };
 }
 

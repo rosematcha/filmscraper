@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && pnpm --filter filmscraper-web typecheck",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "publish:data": "tsx src/publish.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
