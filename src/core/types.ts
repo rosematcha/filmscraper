@@ -166,4 +166,6 @@ export interface ScrapeResult {
   readonly theaters: readonly Theater[];
   readonly movies: readonly AggregatedMovie[];
   readonly warnings: readonly ScrapeWarning[];
+  /** The raw venue-days behind `movies`, for publishing a reusable dataset. */
+  readonly days: readonly VenueDay[];
 }

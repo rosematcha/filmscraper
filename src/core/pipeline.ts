@@ -268,5 +268,5 @@ export async function runPipeline(
     keepYears: options.keepYears,
   });
 
-  return { request, dates, horizon, knownFrom, theaters, movies, warnings };
+  return { request, dates, horizon, knownFrom, theaters, movies, warnings, days: inRange };
 }
