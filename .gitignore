@@ -7,3 +7,7 @@ coverage/
 .DS_Store
 scratch/
 out/
+web/public/data/
+
+# Vite/tsc incremental build state
+*.tsbuildinfo

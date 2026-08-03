@@ -1,0 +1,20 @@
+# The site is the Vite build, not the compiled Node backend in ./dist.
+# Publishing ./dist is what produced a 404: it holds cli.js and server.js and
+# no index.html at all.
+[build]
+  base = "/"
+  # A git push must not clobber the nightly data with an empty build, so the
+  # current dataset is pulled from the live site first. Missing data is not an
+  # error: the site says so plainly and the next scheduled scrape fills it in.
+  command = "pnpm install --frozen-lockfile && mkdir -p web/public/data && (curl -sfS --max-time 30 \"$URL/data/latest.json\" -o web/public/data/latest.json || echo 'no published dataset yet') && pnpm --filter filmscraper-web build"
+  publish = "web/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Single-page app: unknown paths serve the shell rather than a Netlify 404.
+# The dataset is a real file, so it is matched before this catch-all.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

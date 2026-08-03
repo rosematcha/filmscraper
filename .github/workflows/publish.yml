@@ -1,0 +1,80 @@
+name: Publish listings
+
+on:
+  schedule:
+    # 18:00 UTC is 1pm in San Antonio during CDT. GitHub cron has no timezone,
+    # so this drifts to noon local once CST starts in November.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      radius:
+        description: Radius to scrape, in miles
+        default: '35'
+      days:
+        description: Days to cover, starting today
+        default: '31'
+
+# One run at a time: two scrapes deploying at once would race.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Fandango is the slow part; a month at 35 mi is several ZIP seeds per date.
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Scrape
+        run: >
+          pnpm publish:data
+          --radius ${{ inputs.radius || '35' }}
+          --days ${{ inputs.days || '31' }}
+          --concurrency 4
+          --out web/public/data/latest.json
+
+      - name: Build site
+        run: pnpm --filter filmscraper-web build
+
+      - name: Deploy to Netlify
+        # Deployed straight from CI rather than committed, so the scheduled runs
+        # never appear as bot commits in the repository history.
+        run: >
+          pnpm dlx netlify-cli@17 deploy
+          --dir web/dist
+          --prod
+          --message "listings ${{ github.run_number }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Summarise
+        if: always()
+        run: |
+          if [ -f web/public/data/latest.json ]; then
+            node -e '
+              const d = require("./web/public/data/latest.json");
+              const kb = (require("fs").statSync("web/public/data/latest.json").size / 1024).toFixed(0);
+              console.log(`| field | value |\n|---|---|`);
+              console.log(`| window | ${d.from} → ${d.to} |`);
+              console.log(`| radius | ${d.radiusMiles} mi |`);
+              console.log(`| horizon | ${d.horizon} |`);
+              console.log(`| venue-days | ${d.days.length} |`);
+              console.log(`| size | ${kb} KB |`);
+            ' >> "$GITHUB_STEP_SUMMARY"
+          fi
