@@ -2,18 +2,24 @@ import type { Page } from 'playwright';
 import { BrowserSession, gotoWithRetry } from '../../net/browser.js';
 import type { IsoDate, ScrapeWarning, VenueDay } from '../../core/types.js';
 import { pageDistances, parseShowtimesPage } from './parse.js';
+import {
+  isCapped,
+  nextSeeds,
+  normalizeDistances,
+  seedBudget,
+  THEATERS_PER_ZIP_CAP,
+} from './seeds.js';
 
 const SITE = 'https://www.fandango.com';
 
-/** Fandango serves ten theaters per page, nearest first. */
-const THEATERS_PER_PAGE = 10;
 /** Hard stop so a layout change can never spin the pager forever. */
 const MAX_PAGES = 12;
 
 const AMENITY_GROUP = '.js-amenity-btn[data-amenity-group]';
 const MORE_BUTTON = 'button.js-page-btn, button.pagination__more-btn';
 
-export type HarvestProgress = (message: string) => void;
+/** Emits a progress line for the day at `step` of `total`. */
+export type HarvestProgress = (message: string, step: number, total: number) => void;
 
 export type PageDecision = 'continue' | 'exhausted' | 'past-radius';
 
@@ -64,19 +70,27 @@ async function exhaustLazyLoad(page: Page): Promise<void> {
  * single distance would let one stray "45 mi" string elsewhere on the page
  * truncate discovery and silently drop the far theaters.
  */
-async function harvestDate(
+async function harvestSeedDate(
   session: BrowserSession,
   zip: string,
   date: IsoDate,
   radiusMiles: number,
+  step: number,
+  total: number,
   onProgress: HarvestProgress,
 ): Promise<{ days: VenueDay[]; warnings: ScrapeWarning[] }> {
   const days: VenueDay[] = [];
   const warnings: ScrapeWarning[] = [];
   const seenTheaters = new Set<string>();
   const page = await session.newPage();
+  const report = (message: string): void => {
+    onProgress(message, step, total);
+  };
 
   try {
+    // Announced before the request, not after: a page takes ~15s and silence
+    // reads as a hung app.
+    report(`${date} · loading`);
     await session.throttle();
     await gotoWithRetry(page, `${SITE}/${zip}_movietimes?date=${date}`);
     await page
@@ -84,6 +98,7 @@ async function harvestDate(
       .catch(() => undefined);
 
     for (let pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
+      report(`${date} · page ${pageNo} · reading showtimes`);
       await exhaustLazyLoad(page);
       const html = await page.content();
       const parsed = parseShowtimesPage(html, date);
@@ -100,30 +115,22 @@ async function harvestDate(
       const fresh = parsed.filter((d) => !seenTheaters.has(d.theater.href));
       for (const d of fresh) seenTheaters.add(d.theater.href);
 
-      const inRange = fresh.filter((d) => d.theater.miles <= radiusMiles);
-      days.push(...inRange);
+      // Keep everything the seed returned; the radius filter runs later, once
+      // distances have been re-measured against the true search origin.
+      days.push(...fresh);
       const nearest = Math.min(...distances);
       const furthest = Math.max(...distances);
       if (fresh.length > 0) {
-        onProgress(
-          `${date} page ${pageNo}: ${fresh.length} theaters (${nearest.toFixed(2)}–${furthest.toFixed(2)} mi), kept ${inRange.length}`,
+        report(
+          `${date} · ${zip} · page ${pageNo} · ${fresh.length} theaters (${nearest.toFixed(2)}–${furthest.toFixed(2)} mi)`,
         );
       }
 
-      const decision = decideNextPage(fresh.length, furthest, radiusMiles);
-      if (decision !== 'continue') break;
+      if (decideNextPage(fresh.length, furthest, radiusMiles) !== 'continue') break;
 
       const more = page.locator(MORE_BUTTON).first();
       const hasMore = (await more.count()) > 0 && (await more.isVisible().catch(() => false));
-      if (!hasMore) {
-        if (furthest <= radiusMiles && parsed.length === THEATERS_PER_PAGE) {
-          warnings.push({
-            kind: 'radius-truncated',
-            message: `Theater list ended at ${furthest.toFixed(2)} mi for ${date}, inside the ${radiusMiles} mi radius. Some venues may be missing.`,
-          });
-        }
-        break;
-      }
+      if (!hasMore) break;
 
       await more.scrollIntoViewIfNeeded().catch(() => undefined);
       await more.click({ timeout: 8000 }).catch(() => undefined);
@@ -150,18 +157,90 @@ export async function harvestFandango(
   const onProgress = options.onProgress ?? ((): void => undefined);
   const days: VenueDay[] = [];
   const warnings: ScrapeWarning[] = [];
+  const total = options.dates.length;
+  const firstDate = options.dates[0];
+  if (firstDate === undefined) return { days, warnings };
 
-  for (const date of options.dates) {
-    const result = await harvestDate(
-      session,
-      options.zip,
-      date,
-      options.radiusMiles,
-      onProgress,
-    );
-    days.push(...result.days);
-    warnings.push(...result.warnings);
+  // --- pass 1: work out which ZIP seeds are needed --------------------------
+  // Fandango returns at most 20 theaters per ZIP however wide the radius, so a
+  // large search has to be assembled from several neighbouring ZIPs.
+  const seeds = [options.zip];
+  const visited = new Set(seeds);
+  const seedDays = new Map<string, VenueDay[]>();
+
+  const first = await harvestSeedDate(
+    session,
+    options.zip,
+    firstDate,
+    options.radiusMiles,
+    1,
+    total,
+    onProgress,
+  );
+  seedDays.set(options.zip, first.days);
+  warnings.push(...first.warnings);
+
+  const originHrefs = new Set(first.days.map((d) => d.theater.href));
+  let frontier = first.days.map((d) => d.theater);
+
+  while (isCapped(frontier, options.radiusMiles) && seeds.length < seedBudget()) {
+    const candidates = nextSeeds(frontier, visited, seedBudget() - seeds.length);
+    if (candidates.length === 0) break;
+    let discovered = 0;
+    for (const seed of candidates) {
+      visited.add(seed);
+      seeds.push(seed);
+      onProgress(`expanding search to ${seed}`, 1, total);
+      const extra = await harvestSeedDate(
+        session,
+        seed,
+        firstDate,
+        options.radiusMiles,
+        1,
+        total,
+        onProgress,
+      );
+      seedDays.set(seed, extra.days);
+      discovered += extra.days.filter((d) => !originHrefs.has(d.theater.href)).length;
+    }
+    if (discovered === 0) break;
+    frontier = [...seedDays.values()].flat().map((d) => d.theater);
   }
 
-  return { days, warnings };
+  if (seeds.length > 1) {
+    warnings.push({
+      kind: 'radius-truncated',
+      message:
+        `Fandango lists at most ${String(THEATERS_PER_ZIP_CAP)} theaters per ZIP, which the ` +
+        `${String(options.radiusMiles)} mi radius exceeded. Searched ${String(seeds.length)} ZIPs ` +
+        `(${seeds.join(', ')}) and measured every venue from ${options.zip}.`,
+    });
+  }
+
+  // --- pass 2: the remaining dates, across every seed that mattered ---------
+  for (const day of seedDays.values()) days.push(...day);
+  for (const [index, date] of options.dates.entries()) {
+    if (date === firstDate) continue;
+    for (const seed of seeds) {
+      const result = await harvestSeedDate(
+        session,
+        seed,
+        date,
+        options.radiusMiles,
+        index + 1,
+        total,
+        onProgress,
+      );
+      days.push(...result.days);
+      warnings.push(...result.warnings);
+    }
+  }
+
+  // Neighbouring seeds overlap heavily, so the same venue-day arrives several
+  // times; keep one of each before anything downstream counts listings.
+  const unique = new Map<string, VenueDay>();
+  for (const day of days) unique.set(`${day.theater.href} ${day.date}`, day);
+
+  const measured = await normalizeDistances([...unique.values()], options.zip, originHrefs);
+  return { days: measured.filter((d) => d.theater.miles <= options.radiusMiles), warnings };
 }

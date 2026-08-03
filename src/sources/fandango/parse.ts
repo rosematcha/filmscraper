@@ -37,6 +37,7 @@ const SEL = {
   theaterRow: '.shared-showtimes__container',
   theaterLink: '.shared-theater-header__name-link',
   theaterDistance: '.shared-theater-header__distance',
+  theaterAddress: '.shared-theater-header__address',
   movieBlock: '.shared-movie-showtimes',
   movieTitle: '[class*="movie-title"]',
   movieLink: 'a[href*="/movie-overview"]',
@@ -112,6 +113,7 @@ export function parseShowtimesPage(html: string, date: IsoDate): VenueDay[] {
     const href = link?.getAttribute('href') ?? null;
     const miles = parseMiles(text(row.querySelector(SEL.theaterDistance)));
     if (!name || !href || miles === null) continue;
+    const address = text(row.querySelector(SEL.theaterAddress));
 
     const movies: MovieListing[] = [];
     for (const block of row.querySelectorAll(SEL.movieBlock)) {
@@ -130,7 +132,7 @@ export function parseShowtimesPage(html: string, date: IsoDate): VenueDay[] {
       movies.push({ title, href: movieHref, groups });
     }
 
-    days.push({ theater: { name, href, miles }, date, movies });
+    days.push({ theater: { name, href, miles, ...(address ? { address } : {}) }, date, movies });
   }
 
   return days;
