@@ -18,13 +18,12 @@ export interface ScrapeParams {
   to: string;
   radius: number;
   keepYears: boolean;
-  showAccessibility: boolean;
-  showLanguage: boolean;
   sources: string[];
   concurrency: number;
   separateDriveIn: boolean;
   separateLibrary: boolean;
   separateEvents: boolean;
+  separateOpenCaptions: boolean;
   foreign: 'inline' | 'separate' | 'exclude';
 }
 
@@ -37,6 +36,8 @@ export interface ResultRow {
   isEvent: boolean;
   section: string;
   sectionHeading: string | null;
+  theaters: string[];
+  dates: string[];
 }
 
 export interface TheaterInfo {

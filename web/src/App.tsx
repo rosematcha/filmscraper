@@ -66,16 +66,15 @@ export default function App(): React.JSX.Element {
   const [to, setTo] = useState(addDays(start, DEFAULT_WINDOW_DAYS - 1));
   const [radius, setRadius] = useState(15);
   const [keepYears, setKeepYears] = useState(false);
-  const [showAccessibility, setShowAccessibility] = useState(false);
-  const [showLanguage, setShowLanguage] = useState(false);
 
   const [sources, setSources] = useState<SourceInfo[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
-  const [concurrency, setConcurrency] = useState(3);
+  const [concurrency, setConcurrency] = useState(2);
   const [separateDriveIn, setSeparateDriveIn] = useState(true);
   const [separateLibrary, setSeparateLibrary] = useState(true);
-  const [separateEvents, setSeparateEvents] = useState(false);
-  const [foreign, setForeign] = useState<'inline' | 'separate' | 'exclude'>('inline');
+  const [separateEvents, setSeparateEvents] = useState(true);
+  const [separateOpenCaptions, setSeparateOpenCaptions] = useState(false);
+  const [foreign, setForeign] = useState<'inline' | 'separate' | 'exclude'>('separate');
   const [showOptions, setShowOptions] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Map<string, ProgressUpdate>>(new Map());
@@ -123,13 +122,12 @@ export default function App(): React.JSX.Element {
           to,
           radius,
           keepYears,
-          showAccessibility,
-          showLanguage,
           sources: chosen,
           concurrency,
           separateDriveIn,
           separateLibrary,
           separateEvents,
+          separateOpenCaptions,
           foreign,
         },
         {
@@ -169,13 +167,12 @@ export default function App(): React.JSX.Element {
       to,
       radius,
       keepYears,
-      showAccessibility,
-      showLanguage,
       chosen,
       concurrency,
       separateDriveIn,
       separateLibrary,
       separateEvents,
+      separateOpenCaptions,
       foreign,
     ],
   );
@@ -193,10 +190,13 @@ export default function App(): React.JSX.Element {
 
   const summary = useMemo(() => {
     if (!result) return '';
-    const movies = `${String(result.rows.length)} movie${result.rows.length === 1 ? '' : 's'}`;
+    // Rows can repeat across tables, so count distinct films rather than rows.
+    const titles = new Set(result.rows.map((r) => r.title));
+    const movies = `${String(titles.size)} movie${titles.size === 1 ? '' : 's'}`;
     const theaters = `${String(result.theaters.length)} theater${result.theaters.length === 1 ? '' : 's'}`;
-    const furthest = result.theaters.at(-1)?.miles;
-    return `${movies} · ${theaters}${furthest === undefined ? '' : ` within ${furthest.toFixed(1)} mi`}`;
+    // No distance here: the drive-in and library tables are radius-exempt, so
+    // the furthest venue would contradict the miles field beside it.
+    return `${movies} · ${theaters}`;
   }, [result]);
 
   return (
@@ -270,115 +270,117 @@ export default function App(): React.JSX.Element {
         </button>
 
         {showOptions && (
-          <>
-            <div className="toggles sources">
-              {sources.map((source) => (
-                <label key={source.id}>
-                  <input
-                    type="checkbox"
-                    checked={chosen.includes(source.id)}
-                    onChange={(e) => {
-                      setChosen((prev) =>
-                        e.target.checked
-                          ? [...prev, source.id]
-                          : prev.filter((id) => id !== source.id),
-                      );
-                    }}
-                  />
-                  {source.label}
-                </label>
-              ))}
+          <div className="options">
+            <div className="optgroup">
+              <span className="optgroup__title">Sources</span>
+              <div className="optgroup__items">
+                {sources.map((source) => (
+                  <label key={source.id}>
+                    <input
+                      type="checkbox"
+                      checked={chosen.includes(source.id)}
+                      onChange={(e) => {
+                        setChosen((prev) =>
+                          e.target.checked
+                            ? [...prev, source.id]
+                            : prev.filter((id) => id !== source.id),
+                        );
+                      }}
+                    />
+                    {source.label}
+                  </label>
+                ))}
+              </div>
             </div>
 
-            <div className="toggles">
-          <label>
-            <input
-              type="checkbox"
-              checked={keepYears}
-              onChange={(e) => {
-                setKeepYears(e.target.checked);
-              }}
-            />
-            keep years
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={showAccessibility}
-              onChange={(e) => {
-                setShowAccessibility(e.target.checked);
-              }}
-            />
-            captions
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={showLanguage}
-              onChange={(e) => {
-                setShowLanguage(e.target.checked);
-              }}
-            />
-                language
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={separateDriveIn}
-                  onChange={(e) => {
-                    setSeparateDriveIn(e.target.checked);
-                  }}
-                />
-                drive-in table
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={separateLibrary}
-                  onChange={(e) => {
-                    setSeparateLibrary(e.target.checked);
-                  }}
-                />
-                library table
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={separateEvents}
-                  onChange={(e) => {
-                    setSeparateEvents(e.target.checked);
-                  }}
-                />
-                events table
-              </label>
-              <label className="inline-number">
-                not in English
-                <select
-                  value={foreign}
-                  onChange={(e) => {
-                    setForeign(e.target.value as 'inline' | 'separate' | 'exclude');
-                  }}
-                >
-                  <option value="inline">inline</option>
-                  <option value="separate">own table</option>
-                  <option value="exclude">exclude</option>
-                </select>
-              </label>
-              <label className="inline-number">
-                parallel
-                <input
-                  type="number"
-                  min={1}
-                  max={8}
-                  step={1}
-                  value={concurrency}
-                  onChange={(e) => {
-                    setConcurrency(Number(e.target.value));
-                  }}
-                />
-              </label>
+            <div className="optgroup">
+              <span className="optgroup__title">Tables</span>
+              <div className="optgroup__items">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={separateDriveIn}
+                    onChange={(e) => {
+                      setSeparateDriveIn(e.target.checked);
+                    }}
+                  />
+                  drive-in table
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={separateLibrary}
+                    onChange={(e) => {
+                      setSeparateLibrary(e.target.checked);
+                    }}
+                  />
+                  library table
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={separateEvents}
+                    onChange={(e) => {
+                      setSeparateEvents(e.target.checked);
+                    }}
+                  />
+                  events table
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={separateOpenCaptions}
+                    onChange={(e) => {
+                      setSeparateOpenCaptions(e.target.checked);
+                    }}
+                  />
+                  open captions table
+                </label>
+                <label className="inline-number">
+                  not in English
+                  <select
+                    value={foreign}
+                    onChange={(e) => {
+                      setForeign(e.target.value as 'inline' | 'separate' | 'exclude');
+                    }}
+                  >
+                    <option value="separate">own table</option>
+                    <option value="inline">inline</option>
+                    <option value="exclude">exclude</option>
+                  </select>
+                </label>
+              </div>
             </div>
-          </>
+
+            <div className="optgroup">
+              <span className="optgroup__title">Other</span>
+              <div className="optgroup__items">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={keepYears}
+                    onChange={(e) => {
+                      setKeepYears(e.target.checked);
+                    }}
+                  />
+                  keep years
+                </label>
+                <label className="inline-number">
+                  parallel
+                  <input
+                    type="number"
+                    min={1}
+                    max={8}
+                    step={1}
+                    value={concurrency}
+                    onChange={(e) => {
+                      setConcurrency(Number(e.target.value));
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
         )}
       </form>
 
@@ -484,7 +486,19 @@ export default function App(): React.JSX.Element {
                       </a>
                     </td>
                     <td className="notes">{row.notes}</td>
-                    <td className="reach">{reach(row.theaterCount, row.dateCount)}</td>
+                    <td className="reach" tabIndex={0}>
+                      {reach(row.theaterCount, row.dateCount)}
+                      <span className="reach__detail" role="tooltip">
+                        <span className="reach__heading">
+                          {row.theaterCount === 1 ? 'Theater' : 'Theaters'}
+                        </span>
+                        <span className="reach__list">{row.theaters.join(', ')}</span>
+                        <span className="reach__heading">
+                          {row.dateCount === 1 ? 'Date' : 'Dates'}
+                        </span>
+                        <span className="reach__list">{compactDates(row.dates)}</span>
+                      </span>
+                    </td>
                   </tr>
                   </Fragment>
                 ))}

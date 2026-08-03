@@ -320,6 +320,61 @@ th:last-child {
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  position: relative;
+  cursor: help;
+}
+
+.reach:hover,
+.reach:focus-visible {
+  color: var(--ink);
+  outline: none;
+}
+
+/* The counts answer "how wide"; this answers "where and when", on demand. */
+.reach__detail {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 2;
+  display: none;
+  width: max-content;
+  max-width: 22rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: normal;
+  text-align: left;
+}
+
+.reach:hover .reach__detail,
+.reach:focus-visible .reach__detail {
+  display: block;
+}
+
+/* Keep the last rows' panels on screen. */
+tbody tr:nth-last-child(-n + 3) .reach__detail {
+  top: auto;
+  bottom: calc(100% + 0.25rem);
+}
+
+.reach__heading {
+  display: block;
+  color: var(--faint);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+}
+
+.reach__list {
+  display: block;
+  color: var(--ink);
+  margin-bottom: 0.4rem;
+}
+
+.reach__list:last-child {
+  margin-bottom: 0;
 }
 
 pre {
@@ -340,9 +395,47 @@ pre {
   max-width: 62ch;
 }
 
-/* Source checkboxes sit above the display toggles, sharing their quiet style. */
-.sources {
-  padding-top: 0.15rem;
+/* Settings grouped by what they affect, so the row stays scannable. */
+.options {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.25rem;
+}
+
+.optgroup {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.optgroup__title {
+  font-size: 0.6875rem;
+  color: var(--faint);
+  letter-spacing: 0.04em;
+}
+
+.optgroup__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.optgroup__items label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+@media (max-width: 640px) {
+  .optgroup {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
 }
 
 /* Options stay folded away: the common run needs none of them. The width is
