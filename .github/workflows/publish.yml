@@ -2,9 +2,10 @@ name: Publish listings
 
 on:
   schedule:
-    # 18:00 UTC is 1pm in San Antonio during CDT. GitHub cron has no timezone,
-    # so this drifts to noon local once CST starts in November.
-    - cron: '0 18 * * *'
+    # Every slot fires; src/core/schedule.ts decides which sources are actually
+    # due, so a 06:00 Tuesday run does nothing and exits. 18:00 UTC is 1pm in
+    # San Antonio during CDT and noon once CST starts in November.
+    - cron: '0 0,6,12,18 * * *'
   workflow_dispatch:
     inputs:
       radius:
@@ -45,18 +46,35 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Scrape
+        # A manual run does everything; a scheduled one only what is due, then
+        # merges with the last published dataset so untouched sources survive.
         run: >
           pnpm publish:data
           --radius ${{ inputs.radius || '35' }}
           --days ${{ inputs.days || '31' }}
           --concurrency 4
           --out web/public/data/latest.json
+          --merge-from "$SITE_URL/data/latest.json"
+          ${{ github.event_name == 'workflow_dispatch' && '--all' || '' }}
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+
+      - name: Stop if nothing was scraped
+        id: check
+        run: |
+          if [ -f web/public/data/latest.json ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing was due at this hour; skipping build and deploy."
+          fi
 
       - name: Build site
+        if: steps.check.outputs.changed == 'true'
         run: pnpm --filter filmscraper-web build
 
       - name: Deploy to Netlify
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ steps.check.outputs.changed == 'true' && inputs.dry_run != true }}
         # Deployed straight from CI rather than committed, so the scheduled runs
         # never appear as bot commits in the repository history.
         #
