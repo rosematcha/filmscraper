@@ -6,11 +6,12 @@
  * no static host provides, so the scrape happens in CI and the site ships the
  * result.
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
 import { loadAliases } from './core/config.js';
-import { DATASET_VERSION, type Dataset } from './core/dataset.js';
+import { isDataset, mergeDataset, type Dataset } from './core/dataset.js';
+import { allSources, dueSources } from './core/schedule.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
 import { unfilteredSources, DEFAULT_SECTION_OPTIONS } from './core/sections.js';
 import type { ProgressUpdate } from './core/types.js';
@@ -30,6 +31,9 @@ interface PublishOptions {
   concurrency: number;
   timezone: string;
   out: string;
+  sources?: string[];
+  all: boolean;
+  mergeFrom?: string;
 }
 
 const program = new Command()
@@ -45,7 +49,17 @@ const program = new Command()
   )
   .option('-c, --concurrency <n>', 'Fandango pages to fetch at once', positiveNumber, 4)
   .option('--timezone <zone>', 'timezone the market sits in', 'America/Chicago')
-  .option('-o, --out <file>', 'where to write the dataset', 'web/public/data/latest.json');
+  .option('-o, --out <file>', 'where to write the dataset', 'web/public/data/latest.json')
+  .option(
+    '-s, --sources <ids>',
+    'comma-separated sources; defaults to whichever are due now',
+    (value: string) => value.split(',').map((v) => v.trim()).filter(Boolean),
+  )
+  .option('--all', 'scrape every source regardless of schedule', false)
+  .option(
+    '--merge-from <url>',
+    'previous dataset to carry un-scraped sources over from',
+  );
 
 program.parse();
 const options = program.opts<PublishOptions>();
@@ -55,7 +69,6 @@ const to = new Date(Date.parse(`${from}T12:00:00Z`) + (options.days - 1) * 86_40
   .toISOString()
   .slice(0, 10);
 
-const sourceIds = [...DEFAULT_SOURCE_IDS];
 const started = Date.now();
 const log = (message: string): void => {
   console.error(message);
@@ -71,6 +84,43 @@ const progress = ({ sourceId, message, step, total, done }: ProgressUpdate): voi
   log(`[${label.get(sourceId) ?? sourceId}${count}] ${done === true ? 'done' : message}`);
 };
 
+/**
+ * Read the dataset the last run published.
+ *
+ * A partial run depends on this: without the previous state the sources that
+ * were not due would simply vanish. Failure is therefore not fatal but it does
+ * force a full scrape, so the output is always complete rather than truncated.
+ */
+async function loadPrevious(source: string | undefined): Promise<Dataset | null> {
+  if (!source) return null;
+  try {
+    const text = source.startsWith('http')
+      ? await (await fetch(source, { redirect: 'follow' })).text()
+      : await readFile(source, 'utf8');
+    const parsed: unknown = JSON.parse(text);
+    return isDataset(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+const previous = await loadPrevious(options.mergeFrom);
+
+const requested = options.all
+  ? allSources()
+  : (options.sources ?? dueSources(new Date())).filter((id) => DEFAULT_SOURCE_IDS.includes(id));
+
+// Nothing carried over means nothing to preserve, so scrape the lot.
+const sourceIds = previous === null ? allSources() : requested;
+if (previous === null && !options.all && requested.length !== sourceIds.length) {
+  log('No previous dataset available; scraping every source so the output is complete.');
+}
+
+if (sourceIds.length === 0) {
+  log('Nothing due at this hour; leaving the published dataset untouched.');
+  process.exit(0);
+}
+
 const session = new BrowserSession({
   ...DEFAULT_BROWSER_OPTIONS,
   timezone: options.timezone,
@@ -79,7 +129,10 @@ const session = new BrowserSession({
 try {
   if (needsBrowser(sourceIds)) await session.open();
   const aliases = await loadAliases();
-  log(`Scraping ${options.zip} · ${from} → ${to} · ${String(options.radius)} mi`);
+  log(
+    `Scraping ${options.zip} · ${from} → ${to} · ${String(options.radius)} mi · ` +
+      `${sourceIds.join(', ')}${previous ? ' (merging with previous)' : ''}`,
+  );
 
   const result = await runPipeline(
     buildSources(sourceIds, session, options.concurrency),
@@ -99,26 +152,31 @@ try {
     },
   );
 
-  const dataset: Dataset = {
-    version: DATASET_VERSION,
-    generatedAt: new Date().toISOString(),
-    zip: options.zip,
-    from,
-    to,
-    radiusMiles: options.radius,
-    horizon: result.horizon,
-    knownFrom: result.knownFrom,
-    days: result.days,
-    warnings: result.warnings,
-  };
+  const dataset = mergeDataset(
+    previous,
+    {
+      days: result.days,
+      warnings: result.warnings,
+      sourceIds,
+      from,
+      to,
+      zip: options.zip,
+      radiusMiles: options.radius,
+      horizon: result.horizon,
+      knownFrom: result.knownFrom,
+    },
+    new Date(),
+  );
 
   await mkdir(dirname(options.out), { recursive: true });
   await writeFile(options.out, JSON.stringify(dataset), 'utf8');
 
   const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  const carried = dataset.days.length - result.days.length;
   log(
-    `Wrote ${options.out} — ${String(result.days.length)} venue-days, ` +
-      `${String(result.movies.length)} movies, ${String(result.theaters.length)} theaters, ${seconds}s`,
+    `Wrote ${options.out} — ${String(dataset.days.length)} venue-days ` +
+      `(${String(result.days.length)} fresh, ${String(carried)} carried), ` +
+      `${String(result.theaters.length)} theaters, ${seconds}s`,
   );
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
