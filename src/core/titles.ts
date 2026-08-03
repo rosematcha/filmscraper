@@ -12,6 +12,37 @@ const VARIANT_SUFFIX =
 /** Leading articles ignored when comparing titles for merge purposes. */
 const LEADING_ARTICLE = /^(the|a|an)\s+/i;
 
+/**
+ * Separators Fandango uses before an event descriptor.
+ * `Super Troopers 3: Special Broken Lizard Fan Event Q&A`
+ */
+const TITLE_SEPARATOR = /\s+[-–—]\s+|:\s+/;
+
+/**
+ * A trailing segment that describes the *screening* rather than the film.
+ *
+ * Deliberately conservative: only matched against segments after a separator,
+ * and only on distinctive words, so `Mission: Impossible` and
+ * `Gabby's Dollhouse: The Movie` keep their tails.
+ */
+const EVENT_TAIL =
+  /\b(fan\s*event|q\s*(&|and)\s*a|qanda|anniversary|early\s+access|sing-?along|encore|fest\b|presented\s+by|edition|re-?release|special\s+screening|my\s+first\s+movie|imax\s+experience|bonus\s+footage|(extended|director'?s|special|final)\s+cut)\b/i;
+
+/**
+ * Drop a trailing screening descriptor.
+ *
+ * `Super Troopers 3: Special Broken Lizard Fan Event Q&A` and `Super Troopers 3`
+ * are the same film playing the same week, and belong in one row.
+ */
+function stripEventTail(title: string): string {
+  const parts = title.split(TITLE_SEPARATOR);
+  if (parts.length < 2) return title;
+  const cut = parts.findIndex((part, i) => i > 0 && EVENT_TAIL.test(part));
+  if (cut === -1) return title;
+  const head = parts.slice(0, cut).join(': ').trim();
+  return head.length > 0 ? head : title;
+}
+
 /** Strip the trailing `(YYYY)` Fandango appends to most current releases. */
 export function stripYear(title: string): string {
   return title.replace(TRAILING_YEAR, '').trim();
@@ -44,10 +75,10 @@ export function displayTitle(title: string, keepYears: boolean): string {
  * punctuation, and ampersand spelling.
  */
 export function mergeKey(title: string): string {
-  let key = stripYear(title.replace(/\s+/g, ' ').trim());
+  let key = stripEventTail(stripYear(title.replace(/\s+/g, ' ').trim()));
   // Repeat until stable: entries can stack suffixes, e.g. "… 3D Re-Release".
   for (;;) {
-    const stripped = key.replace(VARIANT_SUFFIX, ' ').trim();
+    const stripped = stripEventTail(key.replace(VARIANT_SUFFIX, ' ').trim());
     // A film actually called "IMAX" or "3D" is all suffix; keep the last form
     // that still says something rather than collapsing to an empty key that
     // would merge every such title together.

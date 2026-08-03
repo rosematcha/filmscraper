@@ -87,3 +87,27 @@ describe('movieIdFromHref', () => {
     expect(movieIdFromHref('/movie-theaters/regal/78205')).toBeNull();
   });
 });
+
+describe('event-tail merging', () => {
+  it('folds a fan-event screening into the film', () => {
+    expect(mergeKey('Super Troopers 3: Special Broken Lizard Fan Event Q&A')).toBe(
+      mergeKey('Super Troopers 3'),
+    );
+  });
+
+  it('folds Ghibli Fest and early-access variants', () => {
+    expect(mergeKey('Only Yesterday 35th Anniversary - Studio Ghibli Fest 2026')).toBe(
+      mergeKey('Only Yesterday'),
+    );
+    expect(mergeKey('PAW Patrol: The Dino Movie - Early Access My First Movie')).toBe(
+      mergeKey('PAW Patrol: The Dino Movie'),
+    );
+  });
+
+  it('leaves ordinary subtitles alone', () => {
+    expect(mergeKey('Mission: Impossible')).not.toBe(mergeKey('Mission'));
+    expect(mergeKey("Gabby's Dollhouse: The Movie")).not.toBe(mergeKey("Gabby's Dollhouse"));
+    expect(mergeKey('Hadestown: The Musical')).not.toBe(mergeKey('Hadestown'));
+    expect(mergeKey('ATEEZ : LIGHT THE WAY IN CINEMAS')).not.toBe(mergeKey('ATEEZ'));
+  });
+});
