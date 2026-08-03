@@ -104,6 +104,14 @@ export interface AggregatedMovie {
   readonly languages: readonly string[];
   /** True when the release is not originally in English. */
   readonly foreign: boolean;
+  /**
+   * Release year taken from the listed title, or null when none was given.
+   *
+   * Fandango appends `(2026)` to films in current release and omits it on
+   * catalogue titles, so a missing year is itself evidence of a repertory
+   * booking.
+   */
+  readonly releaseYear: number | null;
   /** Every Fandango movie href folded into this entry, including merged variants. */
   readonly mergedHrefs: readonly string[];
 }

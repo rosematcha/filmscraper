@@ -1,5 +1,5 @@
 import { classifyAmenity, foreignLanguageOf } from './amenities.js';
-import { displayTitle, mergeKey, movieIdFromHref } from './titles.js';
+import { displayTitle, extractYear, mergeKey, movieIdFromHref } from './titles.js';
 import type { AggregatedMovie, IsoDate, ShowtimeGroup, Theater, VenueDay } from './types.js';
 
 export interface AliasConfig {
@@ -59,6 +59,8 @@ interface Accumulator {
   /** Live groups carrying a non-English marker, against the total seen. */
   foreignGroups: number;
   totalGroups: number;
+  /** Release years found in any variant's title, before the year is stripped. */
+  years: Set<number>;
 }
 
 function blank(key: string, title: string, href: string): Accumulator {
@@ -78,6 +80,7 @@ function blank(key: string, title: string, href: string): Accumulator {
     languages: new Set(),
     foreignGroups: 0,
     totalGroups: 0,
+    years: new Set(),
   };
 }
 
@@ -111,6 +114,8 @@ export function aggregate(
         acc = blank(mergeKey(listing.title), listing.title, listing.href);
         byHref.set(listing.href, acc);
       }
+      const year = extractYear(listing.title);
+      if (year !== null) acc.years.add(year);
       const id = movieIdFromHref(listing.href);
       if (id) acc.ids.add(id);
       acc.hrefs.add(listing.href);
@@ -215,6 +220,7 @@ function mergeAccumulators(
     target.isEvent ||= acc.isEvent;
     target.foreignGroups += acc.foreignGroups;
     target.totalGroups += acc.totalGroups;
+    for (const year of acc.years) target.years.add(year);
   }
 
   const byDistance = (a: string, b: string): number =>
@@ -232,6 +238,7 @@ function mergeAccumulators(
     sources: [...acc.sources].sort(),
     languages: acc.foreignGroups === acc.totalGroups ? [...acc.languages].sort() : [],
     foreign: acc.totalGroups > 0 && acc.foreignGroups === acc.totalGroups,
+    releaseYear: acc.years.size > 0 ? Math.min(...acc.years) : null,
     mergedHrefs: [...acc.hrefs].sort(),
   }));
 }

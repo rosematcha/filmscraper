@@ -66,8 +66,11 @@ const ID_RULES: ReadonlyMap<number, AmenityRule> = new Map([
   [1037, { cls: 'language', label: 'Spanish dubbed' }],
   [1128, { cls: 'language', label: 'Spanish language' }],
 
-  // --- event marker -------------------------------------------------------
+  // --- event markers ------------------------------------------------------
   [1182, { cls: 'event' }], // Fathom Features
+  [1525, { cls: 'event' }], // Alternative Content (concert films, broadcasts)
+  [1171, { cls: 'event' }], // Q&A Event
+  [1380, { cls: 'event' }], // Early Access Screening
 
   // --- comfort ------------------------------------------------------------
   [2011, { cls: 'comfort' }], // Reserved seating
