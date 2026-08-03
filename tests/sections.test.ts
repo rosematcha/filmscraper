@@ -1,0 +1,143 @@
+import { describe, expect, it } from 'vitest';
+import { foreignLanguageOf } from '../src/core/amenities.js';
+import { aggregate, EMPTY_ALIASES } from '../src/core/aggregate.js';
+import { buildSections, unfilteredSources, DEFAULT_SECTION_OPTIONS } from '../src/core/sections.js';
+import type { AggregatedMovie, Amenity, VenueDay } from '../src/core/types.js';
+
+describe('foreignLanguageOf', () => {
+  const of = (name: string): string | null => foreignLanguageOf({ id: -1, name });
+
+  it('names the language Fandango tags', () => {
+    // Real ids seen live: 1512 Arabic, 1289 Japanese, 1324 Korean.
+    expect(of('Arabic Language')).toBe('Arabic');
+    expect(of('Japanese Language')).toBe('Japanese');
+    expect(of('Telugu Language')).toBe('Telugu');
+  });
+
+  it('treats English dubs and subtitles as a foreign original', () => {
+    expect(of('English Dubbed')).toBe('');
+    expect(of('English Subtitles')).toBe('');
+  });
+
+  it('ignores English itself and unrelated amenities', () => {
+    expect(of('English Language')).toBeNull();
+    expect(of('Reserved seating')).toBeNull();
+    expect(of('IMAX')).toBeNull();
+  });
+});
+
+const group = (amenities: Amenity[]) => ({
+  amenities,
+  isDolby: false,
+  variantId: null,
+  showtimes: [{ time: '7:00p', expired: false }],
+});
+
+function day(sourceId: string | undefined, title: string, groups: ReturnType<typeof group>[]): VenueDay {
+  return {
+    theater: { name: `V-${sourceId ?? 'fandango'}`, href: '', miles: 1 },
+    date: '2026-08-07',
+    movies: [{ title, href: `/${title}/movie-overview`, groups }],
+    ...(sourceId ? { sourceId } : {}),
+  };
+}
+
+const agg = (days: VenueDay[]): AggregatedMovie[] =>
+  aggregate(days, days.map((d) => d.theater), { aliases: EMPTY_ALIASES, keepYears: false });
+
+describe('foreign detection', () => {
+  it('flags a release whose every showing is non-English', () => {
+    const [movie] = agg([day(undefined, 'El Gawahergy', [group([{ id: 1512, name: 'Arabic Language' }])])]);
+    expect(movie?.foreign).toBe(true);
+    expect(movie?.languages).toEqual(['Arabic']);
+  });
+
+  it('does not flag an English film that has one dubbed screening', () => {
+    // Spider-Man plays Spanish-dubbed at a single venue; that is a dub, not a
+    // foreign release, and it must not end up in a "not in English" table.
+    const [movie] = agg([
+      day(undefined, 'Spider-Man', [
+        group([{ id: 2011, name: 'Reserved seating' }]),
+        group([{ id: 1128, name: 'Spanish Language' }]),
+      ]),
+    ]);
+    expect(movie?.foreign).toBe(false);
+    expect(movie?.languages).toEqual([]);
+  });
+
+  it('flags an anime shown only in an English dub', () => {
+    const [movie] = agg([
+      day(undefined, 'Tales from Earthsea', [group([{ id: 1055, name: 'English Dubbed' }])]),
+    ]);
+    expect(movie?.foreign).toBe(true);
+  });
+});
+
+describe('buildSections', () => {
+  const movies = agg([
+    day(undefined, 'Wide Release', [group([])]),
+    day('stars-and-stripes', 'Drive-In Only', [group([])]),
+    day('sapl', 'Library Only', [group([])]),
+    day(undefined, 'Foreign Film', [group([{ id: 1512, name: 'Arabic Language' }])]),
+  ]);
+  const find = (sections: ReturnType<typeof buildSections>, id: string) =>
+    sections.find((s) => s.id === id);
+
+  it('breaks the drive-in and library into their own tables', () => {
+    const sections = buildSections(movies, DEFAULT_SECTION_OPTIONS);
+    expect(find(sections, 'drive-in')?.movies.map((m) => m.title)).toEqual(['Drive-In Only']);
+    expect(find(sections, 'library')?.movies.map((m) => m.title)).toEqual(['Library Only']);
+    // Foreign stays inline by default.
+    expect(find(sections, 'main')?.movies.map((m) => m.title).sort()).toEqual([
+      'Foreign Film',
+      'Wide Release',
+    ]);
+  });
+
+  it('keeps everything in one table when the options are off', () => {
+    const sections = buildSections(movies, {
+      separateDriveIn: false,
+      separateLibrary: false,
+      foreign: 'inline',
+    });
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.movies).toHaveLength(4);
+  });
+
+  it('can give non-English releases their own table', () => {
+    const sections = buildSections(movies, { ...DEFAULT_SECTION_OPTIONS, foreign: 'separate' });
+    expect(find(sections, 'foreign')?.movies.map((m) => m.title)).toEqual(['Foreign Film']);
+  });
+
+  it('can drop non-English releases entirely', () => {
+    const sections = buildSections(movies, { ...DEFAULT_SECTION_OPTIONS, foreign: 'exclude' });
+    expect(sections.flatMap((s) => s.movies).map((m) => m.title)).not.toContain('Foreign Film');
+  });
+
+  it('lists a shared film in both the main and the venue table', () => {
+    // The drive-in mostly plays wide releases, so an "exclusive only" rule
+    // would leave its table empty nearly every week.
+    const shared = agg([
+      day(undefined, 'Spider-Man', [group([])]),
+      { ...day('stars-and-stripes', 'Spider-Man', [group([])]), theater: { name: 'Drive-In', href: '', miles: 30 } },
+    ]);
+    const sections = buildSections(shared, DEFAULT_SECTION_OPTIONS);
+    expect(find(sections, 'main')?.movies.map((m) => m.title)).toEqual(['Spider-Man']);
+    expect(find(sections, 'drive-in')?.movies.map((m) => m.title)).toEqual(['Spider-Man']);
+  });
+
+  it('keeps a venue-exclusive film out of the main table', () => {
+    const sections = buildSections(movies, DEFAULT_SECTION_OPTIONS);
+    expect(find(sections, 'main')?.movies.map((m) => m.title)).not.toContain('Drive-In Only');
+    expect(find(sections, 'main')?.movies.map((m) => m.title)).not.toContain('Library Only');
+  });
+});
+
+describe('unfilteredSources', () => {
+  it('exempts exactly the venues given their own table', () => {
+    expect([...unfilteredSources(DEFAULT_SECTION_OPTIONS)].sort()).toEqual(['sapl', 'stars-and-stripes']);
+    expect([...unfilteredSources({ ...DEFAULT_SECTION_OPTIONS, separateLibrary: false })]).toEqual([
+      'stars-and-stripes',
+    ]);
+  });
+});
