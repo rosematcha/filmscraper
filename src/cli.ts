@@ -43,6 +43,7 @@ interface CliOptions {
   headed: boolean;
   quiet: boolean;
   sources: string[];
+  concurrency: number;
 }
 
 const program = new Command()
@@ -62,6 +63,12 @@ const program = new Command()
     `comma-separated sources (${SOURCES.map((x) => x.id).join(', ')})`,
     (value: string) => value.split(',').map((v) => v.trim()).filter(Boolean),
     [...DEFAULT_SOURCE_IDS],
+  )
+  .option(
+    '-c, --concurrency <n>',
+    'Fandango pages to fetch at once (1 = serial)',
+    positiveNumber,
+    3,
   )
   .option('--headed', 'run the browser headed, for debugging', false)
   .option('-q, --quiet', 'suppress progress output', false);
@@ -119,12 +126,16 @@ try {
       options.sources.join(', '),
   );
 
-  const result = await runPipeline(buildSources(options.sources, session), request, {
-    aliases,
-    keepYears: options.keepYears,
-    timezone: options.timezone,
-    onProgress: progress,
-  });
+  const result = await runPipeline(
+    buildSources(options.sources, session, options.concurrency),
+    request,
+    {
+      aliases,
+      keepYears: options.keepYears,
+      timezone: options.timezone,
+      onProgress: progress,
+    },
+  );
 
   const table = renderMarkdown(result, renderOptions, aliases.theaterNames);
   const warnings = renderWarnings(result);

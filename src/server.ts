@@ -23,12 +23,14 @@ interface ScrapeBody {
   showAccessibility?: unknown;
   showLanguage?: unknown;
   sources?: unknown;
+  concurrency?: unknown;
 }
 
 interface ParsedBody {
   request: ScrapeRequest;
   options: RenderOptions;
   sources: string[];
+  concurrency: number;
 }
 
 function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
@@ -48,8 +50,12 @@ function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
     : [...DEFAULT_SOURCE_IDS];
   if (sources.length === 0) return { error: 'pick at least one source' };
 
+  const concurrency =
+    typeof body.concurrency === 'number' && body.concurrency >= 1 ? body.concurrency : 3;
+
   return {
     sources,
+    concurrency,
     request: { zip, from, to, radiusMiles: radius },
     options: {
       keepYears: body.keepYears === true,
@@ -76,7 +82,7 @@ app.post('/api/scrape', async (c) => {
   const parsed = parseBody(await c.req.json<ScrapeBody>().catch(() => ({})));
   if ('error' in parsed) return c.json({ error: parsed.error }, 400);
 
-  const { request, options, sources } = parsed;
+  const { request, options, sources, concurrency } = parsed;
   return streamSSE(c, async (stream) => {
     const session = new BrowserSession({ ...DEFAULT_BROWSER_OPTIONS, timezone: TIMEZONE });
     const send = async (event: string, data: unknown): Promise<void> => {
@@ -97,7 +103,7 @@ app.post('/api/scrape', async (c) => {
       // is synchronous, and buffering these until the run finished was why the
       // UI sat silent for the whole scrape.
       let writes = Promise.resolve();
-      const result = await runPipeline(buildSources(sources, session), request, {
+      const result = await runPipeline(buildSources(sources, session, concurrency), request, {
         aliases,
         keepYears: options.keepYears,
         timezone: TIMEZONE,

@@ -36,10 +36,14 @@ export const DEFAULT_SOURCE_IDS: readonly string[] = SOURCES.filter(
  * Only Fandango needs the browser session; the rest read JSON or iCal feeds
  * directly, which is why they cost seconds rather than minutes.
  */
-export function buildSources(ids: readonly string[], session: BrowserSession): Source[] {
+export function buildSources(
+  ids: readonly string[],
+  session: BrowserSession,
+  concurrency = 1,
+): Source[] {
   const wanted = new Set(ids);
   const sources: Source[] = [];
-  if (wanted.has('fandango')) sources.push(new FandangoSource(session));
+  if (wanted.has('fandango')) sources.push(new FandangoSource(session, concurrency));
   if (wanted.has(SLAB_ARTHOUSE.id)) sources.push(new SlabSource(SLAB_ARTHOUSE));
   if (wanted.has(SLAB_OUTDOOR.id)) sources.push(new SlabSource(SLAB_OUTDOOR));
   if (wanted.has(STARS_AND_STRIPES.id)) sources.push(new DriveInSource(STARS_AND_STRIPES));

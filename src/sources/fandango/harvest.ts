@@ -148,6 +148,39 @@ export interface HarvestOptions {
   readonly dates: readonly IsoDate[];
   readonly radiusMiles: number;
   readonly onProgress?: HarvestProgress;
+  /** Pages fetched at once. 1 restores the original serial behaviour. */
+  readonly concurrency?: number;
+}
+
+/** Ceiling on parallel pages, whatever the caller asks for. */
+export const MAX_CONCURRENCY = 8;
+
+export function clampConcurrency(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 1;
+  return Math.min(MAX_CONCURRENCY, Math.max(1, Math.floor(value)));
+}
+
+/**
+ * Run `jobs` through `worker`, `limit` at a time, preserving input order in the
+ * results. Each task owns its own page, so they do not contend.
+ */
+async function pool<T, R>(
+  jobs: readonly T[],
+  limit: number,
+  worker: (job: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(jobs.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.min(limit, jobs.length) }, async () => {
+    for (;;) {
+      const index = next++;
+      const job = jobs[index];
+      if (job === undefined) return;
+      results[index] = await worker(job, index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 export async function harvestFandango(
@@ -219,21 +252,35 @@ export async function harvestFandango(
 
   // --- pass 2: the remaining dates, across every seed that mattered ---------
   for (const day of seedDays.values()) days.push(...day);
-  for (const [index, date] of options.dates.entries()) {
-    if (date === firstDate) continue;
-    for (const seed of seeds) {
-      const result = await harvestSeedDate(
-        session,
-        seed,
-        date,
-        options.radiusMiles,
-        index + 1,
-        total,
-        onProgress,
-      );
-      days.push(...result.days);
-      warnings.push(...result.warnings);
-    }
+
+  const jobs = options.dates
+    .filter((date) => date !== firstDate)
+    .flatMap((date) => seeds.map((seed) => ({ seed, date })));
+
+  const limit = clampConcurrency(options.concurrency);
+  let done = 0;
+  const outcomes = await pool(jobs, limit, async (job) => {
+    const result = await harvestSeedDate(
+      session,
+      job.seed,
+      job.date,
+      options.radiusMiles,
+      // Progress counts finished pages rather than the calendar day, which is
+      // the only meaningful measure once several days are in flight at once.
+      done,
+      jobs.length,
+      (message) => {
+        onProgress(message, done, jobs.length);
+      },
+    );
+    done++;
+    onProgress(`${job.date} · done`, done, jobs.length);
+    return result;
+  });
+
+  for (const result of outcomes) {
+    days.push(...result.days);
+    warnings.push(...result.warnings);
   }
 
   // Neighbouring seeds overlap heavily, so the same venue-day arrives several

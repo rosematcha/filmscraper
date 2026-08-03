@@ -22,6 +22,8 @@ export class BrowserSession {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private lastNavigation = 0;
+  /** Serializes entry to the throttle so concurrent workers cannot race it. */
+  private gate: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: BrowserOptions = DEFAULT_BROWSER_OPTIONS) {}
 
@@ -40,11 +42,28 @@ export class BrowserSession {
     return this.context.newPage();
   }
 
-  /** Space out navigations so a run stays well under any sane rate limit. */
+  /**
+   * Space out the *start* of each navigation.
+   *
+   * Only the moment a request is issued is serialized, so several pages may be
+   * loading at once while new ones still begin no faster than `throttleMs`
+   * apart. Simply comparing timestamps would let concurrent workers all read
+   * the same `lastNavigation` and fire together.
+   */
   async throttle(): Promise<void> {
-    const wait = this.lastNavigation + this.options.throttleMs - Date.now();
-    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    this.lastNavigation = Date.now();
+    const previous = this.gate;
+    let release = (): void => undefined;
+    this.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      const wait = this.lastNavigation + this.options.throttleMs - Date.now();
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      this.lastNavigation = Date.now();
+    } finally {
+      release();
+    }
   }
 
   async close(): Promise<void> {

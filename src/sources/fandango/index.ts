@@ -5,13 +5,18 @@ import { harvestFandango } from './harvest.js';
 export class FandangoSource implements Source {
   readonly id = 'fandango';
 
-  constructor(private readonly session: BrowserSession) {}
+  constructor(
+    private readonly session: BrowserSession,
+    /** Pages fetched at once; 1 keeps the original serial behaviour. */
+    private readonly concurrency = 1,
+  ) {}
 
   async harvest(request: SourceRequest): Promise<SourceResult> {
     return harvestFandango(this.session, {
       zip: request.zip,
       dates: request.dates,
       radiusMiles: request.radiusMiles,
+      concurrency: this.concurrency,
       ...(request.onProgress
         ? {
             onProgress: (message: string, step: number, total: number): void => {
