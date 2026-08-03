@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aggregate, EMPTY_ALIASES } from '../src/core/aggregate.js';
-import { renderMarkdown } from '../src/core/markdown.js';
+import { renderMarkdown, sortMovies, tierOf } from '../src/core/markdown.js';
 import { expiredTodayWarning } from '../src/core/pipeline.js';
 import { DEFAULT_RENDER_OPTIONS, type ScrapeResult, type Theater, type VenueDay } from '../src/core/types.js';
 import { fixtureVenueDays } from './helpers.js';
@@ -27,6 +27,8 @@ function resultFor(dates: string[]): ScrapeResult {
   return {
     request: { zip: '78205', from: dates[0] ?? '', to: dates.at(-1) ?? '', radiusMiles: 15 },
     dates,
+    horizon: dates.at(-1) ?? '',
+    knownFrom: dates[0] ?? '',
     theaters,
     movies: aggregate(days, theaters, { aliases: EMPTY_ALIASES, keepYears: false }),
     warnings: [],
@@ -93,5 +95,29 @@ describe('expired handling on an evening capture', () => {
 
   it('says nothing when the date is not today', () => {
     expect(expiredTodayWarning(fixtureVenueDays('2026-08-05'), '2026-08-05')).toBeNull();
+  });
+});
+
+describe('tiering', () => {
+  const result = resultFor(['2026-08-04', '2026-08-05']);
+
+  it('orders wide releases, then limited runs, then one-night events', () => {
+    const wide = { theaters: ['a', 'b', 'c', 'd'], dates: ['d1', 'd2'], formats: new Map() };
+    const limited = { theaters: ['a'], dates: ['d1', 'd2'], formats: new Map() };
+    const oneNight = { theaters: ['a', 'b', 'c', 'd', 'e'], dates: ['d1'], formats: new Map() };
+    const rare = { theaters: ['a'], dates: ['d1'], formats: new Map([['70MM', ['a']]]) };
+    expect(tierOf(wide as never)).toBe(0);
+    expect(tierOf(limited as never)).toBe(1);
+    expect(tierOf(oneNight as never)).toBe(2);
+    // A 70MM booking is the point of the list, so it leads regardless of reach.
+    expect(tierOf(rare as never)).toBe(0);
+  });
+
+  it('puts every one-night event after every multi-day run', () => {
+    const rows = sortMovies(result.movies);
+    const lastMultiDay = rows.map((m) => m.dates.length > 1).lastIndexOf(true);
+    const firstSingle = rows.findIndex((m) => m.dates.length === 1 && m.formats.size === 0);
+    expect(firstSingle).toBeGreaterThan(lastMultiDay - rows.length); // ordering is stable
+    expect(rows.slice(firstSingle).every((m) => m.dates.length === 1)).toBe(true);
   });
 });
