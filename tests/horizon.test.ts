@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { describeDates } from '../src/core/notes.js';
-import { detectHorizon, detectKnownFrom, horizonWarning } from '../src/core/pipeline.js';
+import {
+  detectHorizon,
+  detectKnownFrom,
+  horizonWarning,
+  pastDatesWarning,
+} from '../src/core/pipeline.js';
 import type { MovieListing, VenueDay } from '../src/core/types.js';
 
 /** Sun 2 Aug through Sat 8 Aug: seven days, so every weekday name is unique. */
@@ -136,5 +141,34 @@ describe('describeDates with a partial today', () => {
     const week = ['2026-08-02', '2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06'];
     const played = ['2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06'];
     expect(describeDates(played, week, '2026-08-03', '2026-08-06')).toBeNull();
+  });
+});
+
+describe('windows that reach into the past', () => {
+  const WINDOW = ['2026-08-02', '2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06'];
+
+  it('does not let a finished date collapse the horizon', () => {
+    // Regression: a scrape run on Aug 3 for a window starting Aug 2 saw zero
+    // listings on day one and treated that as the posting boundary, which made
+    // every film in the table look like a limited engagement.
+    const counts: Record<string, number> = {
+      '2026-08-02': 0,
+      '2026-08-03': 176,
+      '2026-08-04': 170,
+      '2026-08-05': 178,
+      '2026-08-06': 119,
+    };
+    const days = WINDOW.map((d) => venueDay(d, counts[d] ?? 0));
+    expect(detectHorizon(days, WINDOW, '2026-08-03')).toBe('2026-08-06');
+  });
+
+  it('starts reliable data at today, never before it', () => {
+    expect(detectKnownFrom(WINDOW, '2026-08-03', false, '2026-08-06')).toBe('2026-08-03');
+    expect(detectKnownFrom(WINDOW, '2026-08-03', true, '2026-08-06')).toBe('2026-08-04');
+  });
+
+  it('warns that the past dates are empty', () => {
+    expect(pastDatesWarning(WINDOW, '2026-08-03')?.message).toMatch(/already passed/);
+    expect(pastDatesWarning(WINDOW, '2026-08-02')).toBeNull();
   });
 });
