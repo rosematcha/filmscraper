@@ -9,7 +9,7 @@ import type {
   Theater,
   VenueDay,
 } from './types.js';
-import type { Source } from '../sources/source.js';
+import type { Source, SourceProgressFn } from '../sources/source.js';
 
 /** Today in the market's timezone, not the machine's. */
 export function todayIn(timezone: string): IsoDate {
@@ -167,27 +167,20 @@ function collectTheaters(days: readonly VenueDay[]): Theater[] {
 }
 
 /**
- * Merge several sources' progress into one counter.
+ * Tag a source's progress with its own id.
  *
- * Each source counts its own work, so with them running together the raw
- * numbers would jump around. This sums the latest reading from each into a
- * single "N of M" that only ever moves forward.
+ * Readings are deliberately *not* merged into one counter. With several sources
+ * running at once a single number jumps between unrelated jobs and the line
+ * flickers; keeping them separate lets each be displayed on its own row, where
+ * every count moves forward on its own.
  */
-export function combineProgress(
-  sourceIds: readonly string[],
+export function taggedProgress(
+  sourceId: string,
   onProgress: ProgressFn | undefined,
-): (sourceId: string) => ProgressFn | undefined {
-  if (!onProgress) return () => undefined;
-  const state = new Map(sourceIds.map((id) => [id, { step: 0, total: 0 }]));
-  return (sourceId) => (update) => {
-    state.set(sourceId, { step: update.step, total: update.total });
-    let step = 0;
-    let total = 0;
-    for (const entry of state.values()) {
-      step += entry.step;
-      total += entry.total;
-    }
-    onProgress({ message: update.message, step, total });
+): SourceProgressFn | undefined {
+  if (!onProgress) return undefined;
+  return (update) => {
+    onProgress({ ...update, sourceId });
   };
 }
 
@@ -211,29 +204,39 @@ export async function runPipeline(
 
   // Sources hit unrelated hosts, so they run together: the whole scrape costs
   // the slowest source rather than the sum of all of them.
-  const progress = combineProgress(sources.map((s) => s.id), options.onProgress);
   const results = await Promise.all(
-    sources.map((source) =>
-      source
+    sources.map((source) => {
+      const tagged = taggedProgress(source.id, options.onProgress);
+      const finish = <T,>(value: T): T => {
+        options.onProgress?.({
+          sourceId: source.id,
+          message: 'done',
+          step: 1,
+          total: 1,
+          done: true,
+        });
+        return value;
+      };
+      return source
         .harvest({
           zip: request.zip,
           dates,
           radiusMiles: request.radiusMiles,
-          ...(() => {
-            const fn = progress(source.id);
-            return fn ? { onProgress: fn } : {};
-          })(),
+          ...(tagged ? { onProgress: tagged } : {}),
         })
-        .catch((error: unknown) => ({
-          days: [],
-          warnings: [
-            {
-              kind: 'page-error' as const,
-              message: `${source.id} failed: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        })),
-    ),
+        .then(finish)
+        .catch((error: unknown) =>
+          finish({
+            days: [],
+            warnings: [
+              {
+                kind: 'page-error' as const,
+                message: `${source.id} failed: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+          }),
+        );
+    }),
   );
   for (const result of results) {
     days.push(...result.days);

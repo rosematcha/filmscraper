@@ -1,10 +1,13 @@
-import type { IsoDate, ProgressFn, ScrapeWarning, VenueDay } from '../core/types.js';
+import type { IsoDate, ProgressUpdate, ScrapeWarning, VenueDay } from '../core/types.js';
+
+/** Sources report their own progress; the pipeline stamps on the source id. */
+export type SourceProgressFn = (update: Omit<ProgressUpdate, 'sourceId'>) => void;
 
 export interface SourceRequest {
   readonly zip: string;
   readonly dates: readonly IsoDate[];
   readonly radiusMiles: number;
-  readonly onProgress?: ProgressFn;
+  readonly onProgress?: SourceProgressFn;
 }
 
 export interface SourceResult {

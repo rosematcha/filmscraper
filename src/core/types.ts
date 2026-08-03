@@ -122,11 +122,23 @@ export interface ScrapeWarning {
 }
 
 export interface ProgressUpdate {
+  /** Which source this reading belongs to. */
+  readonly sourceId: string;
   readonly message: string;
-  /** 1-based day currently being fetched. */
+  /** Units of work finished. */
   readonly step: number;
-  /** Total days in the window. */
+  /** Units of work expected; 0 when not yet known. */
   readonly total: number;
+  /** Set once the source has finished, successfully or not. */
+  readonly done?: boolean;
+  /**
+   * Work currently in flight, when the source runs jobs in parallel.
+   *
+   * Without this a parallel source looks frozen: its count only moves when a
+   * whole job finishes, so several seconds pass with nothing changing even
+   * though six pages are loading.
+   */
+  readonly active?: readonly string[];
 }
 
 export type ProgressFn = (update: ProgressUpdate) => void;
