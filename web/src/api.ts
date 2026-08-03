@@ -60,9 +60,12 @@ export interface ScrapeResponse {
 }
 
 export interface ProgressUpdate {
+  sourceId: string;
   message: string;
   step: number;
   total: number;
+  done?: boolean;
+  active?: string[];
 }
 
 export interface ScrapeHandlers {
@@ -139,11 +142,14 @@ function dispatch(frame: string, handlers: ScrapeHandlers): void {
   }
 
   if (event === 'progress' && isMessage(payload)) {
-    const { step, total } = payload as Partial<ProgressUpdate>;
+    const { sourceId, step, total, done, active } = payload as Partial<ProgressUpdate>;
     handlers.onProgress({
+      sourceId: typeof sourceId === 'string' ? sourceId : 'run',
       message: payload.message,
       step: typeof step === 'number' ? step : 0,
       total: typeof total === 'number' ? total : 0,
+      done: done === true,
+      active: Array.isArray(active) ? active : [],
     });
   } else if (event === 'failed' && isMessage(payload)) handlers.onError(payload.message);
   else if (event === 'result') handlers.onResult(payload as ScrapeResponse);

@@ -26,6 +26,32 @@ function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Compact a run of ISO dates: `["2026-08-04","2026-08-05"]` -> `"Aug 4, 5"`.
+ * The full list overflows the row once six pages are in flight.
+ */
+function compactDates(dates: readonly string[]): string {
+  const parts = dates
+    .map((d) => /^(\d{4})-(\d{2})-(\d{2})$/.exec(d))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => ({ month: Number(m[2]), day: Number(m[3]) }));
+  if (parts.length === 0) return dates.join(', ');
+
+  const monthName = (month: number): string =>
+    new Date(Date.UTC(2000, month - 1, 1)).toLocaleDateString('en-US', {
+      month: 'short',
+      timeZone: 'UTC',
+    });
+
+  const out: string[] = [];
+  let lastMonth = -1;
+  for (const { month, day } of parts) {
+    out.push(month === lastMonth ? String(day) : `${monthName(month)} ${String(day)}`);
+    lastMonth = month;
+  }
+  return out.join(', ');
+}
+
 /** "2 theaters · 1 day" — the reach numbers behind each Notes cell. */
 function reach(theaters: number, dates: number): string {
   const t = `${String(theaters)} theater${theaters === 1 ? '' : 's'}`;
@@ -52,8 +78,7 @@ export default function App(): React.JSX.Element {
   const [foreign, setForeign] = useState<'inline' | 'separate' | 'exclude'>('inline');
   const [showOptions, setShowOptions] = useState(false);
   const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<ProgressUpdate | null>(null);
-  const [log, setLog] = useState<string[]>([]);
+  const [progress, setProgress] = useState<Map<string, ProgressUpdate>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ScrapeResponse | null>(null);
   const [showMarkdown, setShowMarkdown] = useState(false);
@@ -80,8 +105,13 @@ export default function App(): React.JSX.Element {
       abort.current = controller;
 
       setRunning(true);
-      setProgress(null);
-      setLog([]);
+      // Seed a row per source up front so the block does not reflow as each
+      // one reports in.
+      setProgress(
+        new Map(
+          chosen.map((id) => [id, { sourceId: id, message: 'waiting', step: 0, total: 0 }]),
+        ),
+      );
       setError(null);
       setResult(null);
       setCopied(false);
@@ -104,8 +134,7 @@ export default function App(): React.JSX.Element {
         },
         {
           onProgress: (update) => {
-            setProgress(update);
-            setLog((prev) => [...prev, update.message]);
+            setProgress((prev) => new Map(prev).set(update.sourceId, update));
           },
           onResult: (payload) => {
             setResult(payload);
@@ -119,7 +148,16 @@ export default function App(): React.JSX.Element {
           setError(cause instanceof Error ? cause.message : String(cause));
         })
         .finally(() => {
-          if (!controller.signal.aborted) setRunning(false);
+          if (controller.signal.aborted) return;
+          setRunning(false);
+          // A stream that ends without delivering a result is a failure, not an
+          // empty listing; saying "nothing playing" there would be a lie.
+          setResult((current) => {
+            if (current === null) {
+              setError((e) => e ?? 'The scrape ended without returning results. Try again.');
+            }
+            return current;
+          });
         });
     },
     [
@@ -347,26 +385,42 @@ export default function App(): React.JSX.Element {
       {invalidRange && <p className="status error">“To” is before “from”.</p>}
       {noSources && <p className="status error">Pick at least one source.</p>}
 
-      {(running || log.length > 0) && !error && (
+      {(running || progress.size > 0) && !error && (
         <div className="status">
-          <div className="ticker">
-            {progress && progress.total > 0 && (
-              <>
-                <span className="count">
-                  {progress.step} / {progress.total}
+          {[...progress.values()].map((row) => {
+            const label = sources.find((s) => s.id === row.sourceId)?.label ?? row.sourceId;
+            const inFlight = row.active ?? [];
+            const fraction = row.done ? 1 : row.total > 0 ? row.step / row.total : 0;
+            // A second, fainter segment covers what is loading right now, so a
+            // parallel source visibly moves between completions.
+            const pending =
+              row.done || row.total === 0
+                ? fraction
+                : Math.min(1, (row.step + inFlight.length) / row.total);
+            const detail = row.done
+              ? ''
+              : inFlight.length > 1
+                ? `${String(inFlight.length)} loading · ${compactDates(inFlight)}`
+                : row.message;
+            return (
+              <div className={`track${row.done ? ' track--done' : ''}`} key={row.sourceId}>
+                <span className="track__label">{label}</span>
+                <span className="track__count">
+                  {row.done ? 'done' : row.total > 0 ? `${row.step}/${row.total}` : ''}
                 </span>
                 <span
                   className="bar"
                   style={
                     {
-                      '--fill': `${String((progress.step / progress.total) * 100)}%`,
+                      '--fill': `${String(fraction * 100)}%`,
+                      '--pending': `${String(pending * 100)}%`,
                     } as React.CSSProperties
                   }
                 />
-              </>
-            )}
-            <span className="now">{progress?.message ?? 'starting…'}</span>
-          </div>
+                <span className="track__now">{detail}</span>
+              </div>
+            );
+          })}
         </div>
       )}
 
