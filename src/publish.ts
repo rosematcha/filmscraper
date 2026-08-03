@@ -93,10 +93,12 @@ const progress = ({ sourceId, message, step, total, done }: ProgressUpdate): voi
  */
 async function loadPrevious(source: string | undefined): Promise<Dataset | null> {
   if (!source) return null;
+  // A SITE_URL with a trailing slash would otherwise ask for `//data/...`.
+  const target = source.replace(/(?<!:)\/{2,}/g, '/');
   try {
-    const text = source.startsWith('http')
-      ? await (await fetch(source, { redirect: 'follow' })).text()
-      : await readFile(source, 'utf8');
+    const text = target.startsWith('http')
+      ? await (await fetch(target, { redirect: 'follow' })).text()
+      : await readFile(target, 'utf8');
     const parsed: unknown = JSON.parse(text);
     return isDataset(parsed) ? parsed : null;
   } catch {
