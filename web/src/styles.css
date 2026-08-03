@@ -253,19 +253,33 @@ button:disabled {
   color: var(--muted);
 }
 
+/* Same treatment as the options toggle, so every control on the page reads as
+   one family rather than a mix of buttons and links. */
 .summary button {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--link);
+  font: inherit;
   font-size: 0.75rem;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  color: var(--muted);
+  background: var(--field);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.25rem 0.6rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.summary button:hover {
+  color: var(--ink);
+  border-color: var(--muted);
 }
 
 .summary .group {
   display: flex;
-  gap: 1rem;
+  gap: 0.5rem;
+}
+
+/* Fixed to the wider label so toggling does not shift the neighbouring button. */
+.summary .group button:first-child {
+  width: 8.5rem;
 }
 
 table {
