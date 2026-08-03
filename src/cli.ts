@@ -48,6 +48,7 @@ interface CliOptions {
   separateDriveIn: boolean;
   separateLibrary: boolean;
   separateEvents: boolean;
+  separateOpenCaptions: boolean;
   foreign: ForeignMode;
 }
 
@@ -73,21 +74,26 @@ const program = new Command()
     '-c, --concurrency <n>',
     'Fandango pages to fetch at once (1 = serial)',
     positiveNumber,
-    3,
+    2,
   )
   .option('--no-separate-drive-in', 'keep drive-in films in the main table')
   .option('--no-separate-library', 'keep library screenings in the main table')
-  .option('--separate-events', 'give revivals and one-off events their own table', false)
+  .option('--no-separate-events', 'keep revivals and one-off events in the main table')
+  .option(
+    '--separate-open-captions',
+    'add a table of open-caption screenings (films may repeat)',
+    false,
+  )
   .option(
     '--foreign <mode>',
-    'non-English releases: inline, separate or exclude',
+    'non-English releases: separate, inline or exclude',
     (value: string) => {
       if (value !== 'inline' && value !== 'separate' && value !== 'exclude') {
         throw new InvalidArgumentError('expected inline, separate or exclude');
       }
       return value;
     },
-    'inline',
+    'separate',
   )
   .option('--headed', 'run the browser headed, for debugging', false)
   .option('-q, --quiet', 'suppress progress output', false);
@@ -113,6 +119,7 @@ const sectionOptions: SectionOptions = {
   separateDriveIn: options.separateDriveIn,
   separateLibrary: options.separateLibrary,
   separateEvents: options.separateEvents,
+  separateOpenCaptions: options.separateOpenCaptions,
   foreign: options.foreign,
   currentYear: Number(todayIn(options.timezone).slice(0, 4)),
 };

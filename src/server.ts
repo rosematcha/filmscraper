@@ -5,6 +5,7 @@ import { cors } from 'hono/cors';
 import { streamSSE } from 'hono/streaming';
 import { loadAliases } from './core/config.js';
 import { renderMarkdown, renderRows } from './core/markdown.js';
+import { shortenTheater } from './core/notes.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
 import { unfilteredSources, type ForeignMode, type SectionOptions } from './core/sections.js';
 import type { RenderOptions, ScrapeRequest } from './core/types.js';
@@ -28,6 +29,7 @@ interface ScrapeBody {
   separateDriveIn?: unknown;
   separateLibrary?: unknown;
   separateEvents?: unknown;
+  separateOpenCaptions?: unknown;
   foreign?: unknown;
 }
 
@@ -57,10 +59,10 @@ function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
   if (sources.length === 0) return { error: 'pick at least one source' };
 
   const concurrency =
-    typeof body.concurrency === 'number' && body.concurrency >= 1 ? body.concurrency : 3;
+    typeof body.concurrency === 'number' && body.concurrency >= 1 ? body.concurrency : 2;
 
   const foreign: ForeignMode =
-    body.foreign === 'separate' || body.foreign === 'exclude' ? body.foreign : 'inline';
+    body.foreign === 'inline' || body.foreign === 'exclude' ? body.foreign : 'separate';
 
   return {
     sources,
@@ -68,7 +70,8 @@ function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
     sections: {
       separateDriveIn: body.separateDriveIn !== false,
       separateLibrary: body.separateLibrary !== false,
-      separateEvents: body.separateEvents === true,
+      separateEvents: body.separateEvents !== false,
+      separateOpenCaptions: body.separateOpenCaptions === true,
       foreign,
       currentYear: Number(todayIn(TIMEZONE).slice(0, 4)),
     },
@@ -139,6 +142,9 @@ app.post('/api/scrape', async (c) => {
           isEvent: row.movie.isEvent,
           section: row.section ?? 'main',
           sectionHeading: row.sectionHeading ?? null,
+          // Detail for the hover panel on the reach column.
+          theaters: row.movie.theaters.map((t) => shortenTheater(t, aliases.theaterNames)),
+          dates: [...row.movie.dates],
         })),
         markdown: renderMarkdown(result, options, aliases.theaterNames, sections),
       });
