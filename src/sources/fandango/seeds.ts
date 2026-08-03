@@ -69,24 +69,45 @@ export async function trueMiles(
   return haversineMiles(origin, venue);
 }
 
-/** Re-measure every venue-day against the search origin. */
+/** Coordinate lookups issued at once; they hit a different host to the scrape. */
+const GEO_CONCURRENCY = 8;
+
+/**
+ * Re-measure every venue-day against the search origin.
+ *
+ * Distances are resolved once per venue and in parallel. Walking the days in
+ * order instead meant one serial HTTP round trip per new theater, which cost
+ * over a minute of dead time at the end of a month-long run.
+ */
 export async function normalizeDistances(
   days: readonly VenueDay[],
   originZip: string,
   originSeedHrefs: ReadonlySet<string>,
 ): Promise<VenueDay[]> {
-  const cache = new Map<string, number>();
-  const out: VenueDay[] = [];
+  const unique = new Map<string, Theater>();
   for (const day of days) {
-    const href = day.theater.href;
-    let miles = cache.get(href);
-    if (miles === undefined) {
-      miles = await trueMiles(day.theater, originZip, originSeedHrefs.has(href));
-      cache.set(href, miles);
-    }
-    out.push({ ...day, theater: { ...day.theater, miles } });
+    if (!unique.has(day.theater.href)) unique.set(day.theater.href, day.theater);
   }
-  return out;
+
+  const entries = [...unique.entries()];
+  const miles = new Map<string, number>();
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(GEO_CONCURRENCY, entries.length) }, async () => {
+      for (;;) {
+        const index = next++;
+        const entry = entries[index];
+        if (entry === undefined) return;
+        const [href, theater] = entry;
+        miles.set(href, await trueMiles(theater, originZip, originSeedHrefs.has(href)));
+      }
+    }),
+  );
+
+  return days.map((day) => ({
+    ...day,
+    theater: { ...day.theater, miles: miles.get(day.theater.href) ?? day.theater.miles },
+  }));
 }
 
 export type { Coords };

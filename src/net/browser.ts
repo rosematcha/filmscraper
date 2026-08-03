@@ -13,6 +13,9 @@ export interface BrowserOptions {
 }
 
 export const DEFAULT_BROWSER_OPTIONS: BrowserOptions = {
+  // Spacing between request *starts*. With N pages in flight this caps the
+  // rate at roughly one page per interval regardless of concurrency, which is
+  // what keeps a month-long run from becoming a burst.
   throttleMs: 1500,
   timezone: 'America/Chicago',
   headless: true,
