@@ -22,6 +22,9 @@ export interface ScrapeParams {
   showLanguage: boolean;
   sources: string[];
   concurrency: number;
+  separateDriveIn: boolean;
+  separateLibrary: boolean;
+  foreign: 'inline' | 'separate' | 'exclude';
 }
 
 export interface ResultRow {
@@ -31,6 +34,8 @@ export interface ResultRow {
   theaterCount: number;
   dateCount: number;
   isEvent: boolean;
+  section: string;
+  sectionHeading: string | null;
 }
 
 export interface TheaterInfo {

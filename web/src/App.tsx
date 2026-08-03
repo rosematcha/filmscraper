@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchSources,
   scrape,
@@ -46,6 +46,9 @@ export default function App(): React.JSX.Element {
   const [sources, setSources] = useState<SourceInfo[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
   const [concurrency, setConcurrency] = useState(3);
+  const [separateDriveIn, setSeparateDriveIn] = useState(true);
+  const [separateLibrary, setSeparateLibrary] = useState(true);
+  const [foreign, setForeign] = useState<'inline' | 'separate' | 'exclude'>('inline');
   const [showOptions, setShowOptions] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<ProgressUpdate | null>(null);
@@ -93,6 +96,9 @@ export default function App(): React.JSX.Element {
           showLanguage,
           sources: chosen,
           concurrency,
+          separateDriveIn,
+          separateLibrary,
+          foreign,
         },
         {
           onProgress: (update) => {
@@ -127,6 +133,9 @@ export default function App(): React.JSX.Element {
       showLanguage,
       chosen,
       concurrency,
+      separateDriveIn,
+      separateLibrary,
+      foreign,
     ],
   );
 
@@ -271,6 +280,39 @@ export default function App(): React.JSX.Element {
             />
                 language
               </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={separateDriveIn}
+                  onChange={(e) => {
+                    setSeparateDriveIn(e.target.checked);
+                  }}
+                />
+                drive-in table
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={separateLibrary}
+                  onChange={(e) => {
+                    setSeparateLibrary(e.target.checked);
+                  }}
+                />
+                library table
+              </label>
+              <label className="inline-number">
+                not in English
+                <select
+                  value={foreign}
+                  onChange={(e) => {
+                    setForeign(e.target.value as 'inline' | 'separate' | 'exclude');
+                  }}
+                >
+                  <option value="inline">inline</option>
+                  <option value="separate">own table</option>
+                  <option value="exclude">exclude</option>
+                </select>
+              </label>
               <label className="inline-number">
                 parallel
                 <input
@@ -360,8 +402,15 @@ export default function App(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {result.rows.map((row) => (
-                  <tr key={row.url}>
+                {result.rows.map((row, index) => (
+                  <Fragment key={`${row.section}:${row.url}`}>
+                    {row.sectionHeading !== null &&
+                      row.sectionHeading !== result.rows[index - 1]?.sectionHeading && (
+                        <tr className="section-row">
+                          <th colSpan={3}>{row.sectionHeading}</th>
+                        </tr>
+                      )}
+                  <tr>
                     <td className="title">
                       <a href={row.url} target="_blank" rel="noreferrer">
                         {row.title}
@@ -370,6 +419,7 @@ export default function App(): React.JSX.Element {
                     <td className="notes">{row.notes}</td>
                     <td className="reach">{reach(row.theaterCount, row.dateCount)}</td>
                   </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
