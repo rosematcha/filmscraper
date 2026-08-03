@@ -4,6 +4,9 @@ import type { AggregatedMovie, IsoDate, RenderOptions } from './types.js';
 /** At or below this many venues, a note names them instead of counting them. */
 export const NAMED_THEATER_LIMIT = 3;
 
+/** Below this many dates, listing the days beats describing a run. */
+const MIN_DATES_FOR_RUN = 3;
+
 /** Rank lookup so notes lead with the rarest format. */
 function formatRank(label: string): number {
   return classifyAmenity({ id: -1, name: label }).rank;
@@ -53,6 +56,80 @@ export function dateRange(from: IsoDate, to: IsoDate): IsoDate[] {
   return dates;
 }
 
+/** True when `dates` includes every entry of `range` between `from` and `to` inclusive. */
+function coversSpan(
+  dates: readonly IsoDate[],
+  range: readonly IsoDate[],
+  from: IsoDate,
+  to: IsoDate,
+): boolean {
+  return range.filter((d) => d >= from && d <= to).every((d) => dates.includes(d));
+}
+
+/**
+ * Describe when a movie plays, given how far the posted schedule actually runs.
+ *
+ * The naive version — "any date in the window it does not play is a gap" —
+ * labelled most of the week's releases "Sunday through Thursday only", because
+ * Fandango simply has not posted Friday yet. Everything past `horizon` is
+ * therefore treated as unknown rather than absent.
+ */
+export function describeDates(
+  playedDates: readonly IsoDate[],
+  windowDates: readonly IsoDate[],
+  knownFrom: IsoDate,
+  horizon: IsoDate,
+): string | null {
+  if (playedDates.length === 0 || windowDates.length === 0) return null;
+
+  const known = windowDates.filter((d) => d >= knownFrom && d <= horizon);
+  const playedKnown = playedDates.filter((d) => d >= knownFrom && d <= horizon);
+  const first = playedDates[0] ?? '';
+
+  // Nothing inside the reliable range: a pre-sold future event (or a title whose
+  // only showings today have already started), so state its actual dates.
+  if (playedKnown.length === 0 || known.length === 0) {
+    return playedDates.length === 1
+      ? `${monthDay(first)} only`
+      : `${humanList(playedDates.map(monthDay))} only`;
+  }
+
+  const windowStart = known[0] ?? '';
+  const lastKnown = known.at(-1) ?? '';
+  const firstKnown = playedKnown[0] ?? '';
+  const lastPlayedKnown = playedKnown.at(-1) ?? '';
+
+  // Runs unbroken from its first date to the edge of what we know.
+  if (coversSpan(playedKnown, known, firstKnown, lastKnown)) {
+    if (firstKnown === windowStart) return null; // plays throughout
+    // One listed date that happens to be the last we know about is not evidence
+    // of an opening — Willy Wonka's single Wednesday is a one-night event.
+    if (playedDates.length === 1) return `${monthDay(first)} only`;
+    return `opens ${weekdayOrDate(firstKnown, windowDates)}`;
+  }
+
+  // Runs unbroken from the start of the window but stops before the horizon:
+  // genuinely ending its engagement, not merely unposted. Only worth phrasing
+  // as a run once it spans a few days — a two-night booking reads better
+  // enumerated ("Monday and Tuesday only") than as "through Tuesday".
+  if (
+    playedDates.length >= MIN_DATES_FOR_RUN &&
+    firstKnown === windowStart &&
+    lastPlayedKnown < lastKnown &&
+    coversSpan(playedKnown, known, windowStart, lastPlayedKnown)
+  ) {
+    return `through ${weekdayOrDate(lastPlayedKnown, windowDates)}`;
+  }
+
+  if (playedDates.length === 1) return `${monthDay(first)} only`;
+  return `${humanList(playedDates.map((d) => weekdayOrDate(d, windowDates)))} only`;
+}
+
+/** Weekdays read better inside a week; longer windows need the date. */
+function weekdayOrDate(date: IsoDate, windowDates: readonly IsoDate[]): string {
+  return windowDates.length <= 7 ? weekdayName(date) : monthDay(date);
+}
+
 /**
  * Build the Notes cell for one movie.
  *
@@ -63,6 +140,8 @@ export function dateRange(from: IsoDate, to: IsoDate): IsoDate[] {
 export function buildNotes(
   movie: AggregatedMovie,
   windowDates: readonly IsoDate[],
+  knownFrom: IsoDate,
+  horizon: IsoDate,
   options: RenderOptions,
   theaterNames: Readonly<Record<string, string>>,
 ): string {
@@ -102,17 +181,9 @@ export function buildNotes(
   }
 
   // --- scarcity: dates and venues -----------------------------------------
-  const playsEveryDay = windowDates.every((d) => movie.dates.includes(d));
   const limitedVenues = movie.theaters.length <= NAMED_THEATER_LIMIT;
   const venueList = humanList(movie.theaters.map(short));
-
-  let dateClause: string | null = null;
-  if (!playsEveryDay && movie.dates.length > 0) {
-    dateClause =
-      movie.dates.length === 1
-        ? `${monthDay(movie.dates[0] ?? '')} only`
-        : `${humanList(movie.dates.map(weekdayName))} only`;
-  }
+  const dateClause = describeDates(movie.dates, windowDates, knownFrom, horizon);
 
   if (dateClause && limitedVenues) clauses.push(`${dateClause} at ${venueList}`);
   else if (dateClause) clauses.push(dateClause);

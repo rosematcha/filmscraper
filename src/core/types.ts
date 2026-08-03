@@ -43,8 +43,10 @@ export interface Theater {
   readonly name: string;
   /** Site-relative `theater-page` path. */
   readonly href: string;
-  /** Distance from the search ZIP, in miles, as reported by the source. */
+  /** Distance from the search origin in miles. */
   readonly miles: number;
+  /** Street address as listed, used to derive extra search seeds. */
+  readonly address?: string;
 }
 
 /** Everything one venue is showing on one date. */
@@ -99,13 +101,38 @@ export interface AggregatedMovie {
 }
 
 export interface ScrapeWarning {
-  readonly kind: 'expired-today' | 'radius-truncated' | 'page-error';
+  readonly kind: 'expired-today' | 'radius-truncated' | 'page-error' | 'partial-horizon';
   readonly message: string;
 }
+
+export interface ProgressUpdate {
+  readonly message: string;
+  /** 1-based day currently being fetched. */
+  readonly step: number;
+  /** Total days in the window. */
+  readonly total: number;
+}
+
+export type ProgressFn = (update: ProgressUpdate) => void;
 
 export interface ScrapeResult {
   readonly request: ScrapeRequest;
   readonly dates: readonly IsoDate[];
+  /**
+   * Last date whose schedule looks fully posted.
+   *
+   * Fandango publishes weekly schedules a few days out, so a movie missing
+   * after this date has no showtimes *listed* rather than no showtimes. Notes
+   * must not read that absence as a limited engagement.
+   */
+  readonly horizon: IsoDate;
+  /**
+   * First date whose listings are complete.
+   *
+   * Today's already-started showtimes are dropped, which would otherwise make
+   * a film that has run for weeks look like it opens tomorrow.
+   */
+  readonly knownFrom: IsoDate;
   readonly theaters: readonly Theater[];
   readonly movies: readonly AggregatedMovie[];
   readonly warnings: readonly ScrapeWarning[];

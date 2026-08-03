@@ -2,6 +2,7 @@ import { aggregate, isLive, type AliasConfig } from './aggregate.js';
 import { dateRange } from './notes.js';
 import type {
   IsoDate,
+  ProgressFn,
   ScrapeRequest,
   ScrapeResult,
   ScrapeWarning,
@@ -50,6 +51,82 @@ export function expiredTodayWarning(
   };
 }
 
+/** A date holding less than this share of the peak day is treated as unposted. */
+const HORIZON_DENSITY = 0.6;
+
+/**
+ * Last date whose schedule looks fully posted.
+ *
+ * Theaters publish a week at a time, so the tail of a long window carries only
+ * pre-sold events. Measured live for 78205: 147/142/149 live listings through
+ * Aug 5, 100 on Aug 6, then 62 on Aug 7 — the drop is the posting boundary, not
+ * a week where nothing plays.
+ *
+ * Today is excluded from the baseline because expired showtimes already thin it.
+ */
+export function detectHorizon(
+  days: readonly VenueDay[],
+  dates: readonly IsoDate[],
+  today: IsoDate,
+): IsoDate {
+  const last = dates.at(-1) ?? today;
+  const counted = dates.filter((d) => d !== today);
+  if (counted.length === 0) return last;
+
+  const liveCount = (date: IsoDate): number =>
+    days
+      .filter((d) => d.date === date)
+      .reduce((sum, d) => sum + d.movies.filter((m) => m.groups.some(isLive)).length, 0);
+
+  const counts = new Map(counted.map((d) => [d, liveCount(d)]));
+  const peak = Math.max(...counts.values());
+  if (peak === 0) return last;
+
+  const floor = peak * HORIZON_DENSITY;
+  let horizon = dates[0] ?? last;
+  for (const date of dates) {
+    if (date === today) {
+      horizon = date;
+      continue;
+    }
+    if ((counts.get(date) ?? 0) < floor) break;
+    horizon = date;
+  }
+  return horizon;
+}
+
+/**
+ * First date whose listings can be trusted as complete.
+ *
+ * When today's showtimes have partly started, a film that has run for weeks
+ * shows nothing for today and would otherwise be described as "opens Monday".
+ * Skipping today makes its absence read as unknown rather than as a gap.
+ */
+export function detectKnownFrom(
+  dates: readonly IsoDate[],
+  today: IsoDate,
+  todayIsPartial: boolean,
+  horizon: IsoDate,
+): IsoDate {
+  const first = dates[0] ?? today;
+  if (!todayIsPartial || first !== today) return first;
+  const next = dates[1];
+  // Never skip past the horizon; a one-day window has to use what it has.
+  if (next === undefined || next > horizon) return first;
+  return next;
+}
+
+export function horizonWarning(horizon: IsoDate, dates: readonly IsoDate[]): ScrapeWarning | null {
+  const last = dates.at(-1);
+  if (last === undefined || horizon >= last) return null;
+  return {
+    kind: 'partial-horizon',
+    message:
+      `Fandango has only posted full schedules through ${horizon}. Dates after that show pre-sold ` +
+      `events and advance tickets, so a film missing from them may simply not be on sale yet.`,
+  };
+}
+
 function collectTheaters(days: readonly VenueDay[]): Theater[] {
   const byName = new Map<string, Theater>();
   for (const day of days) {
@@ -63,7 +140,7 @@ export interface PipelineOptions {
   readonly aliases: AliasConfig;
   readonly keepYears: boolean;
   readonly timezone: string;
-  readonly onProgress?: (message: string) => void;
+  readonly onProgress?: ProgressFn;
 }
 
 export async function runPipeline(
@@ -86,8 +163,14 @@ export async function runPipeline(
     warnings.push(...result.warnings);
   }
 
-  const expired = expiredTodayWarning(days, todayIn(options.timezone));
+  const today = todayIn(options.timezone);
+  const expired = expiredTodayWarning(days, today);
   if (expired) warnings.push(expired);
+
+  const horizon = detectHorizon(days, dates, today);
+  const knownFrom = detectKnownFrom(dates, today, expired !== null, horizon);
+  const partial = horizonWarning(horizon, dates);
+  if (partial) warnings.push(partial);
 
   const theaters = collectTheaters(days);
   const movies = aggregate(days, theaters, {
@@ -95,5 +178,5 @@ export async function runPipeline(
     keepYears: options.keepYears,
   });
 
-  return { request, dates, theaters, movies, warnings };
+  return { request, dates, horizon, knownFrom, theaters, movies, warnings };
 }

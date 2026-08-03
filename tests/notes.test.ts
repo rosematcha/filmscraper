@@ -24,8 +24,12 @@ function movie(over: Partial<AggregatedMovie> = {}): AggregatedMovie {
   };
 }
 
-const notes = (m: AggregatedMovie, dates: string[], o: RenderOptions = OPTS): string =>
-  buildNotes(m, dates, o, NAMES);
+const notes = (
+  m: AggregatedMovie,
+  dates: string[],
+  o: RenderOptions = OPTS,
+  horizon = dates.at(-1) ?? '',
+): string => buildNotes(m, dates, dates[0] ?? '', horizon, o, NAMES);
 
 describe('humanList', () => {
   it('joins naturally', () => {
