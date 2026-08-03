@@ -47,6 +47,7 @@ interface CliOptions {
   concurrency: number;
   separateDriveIn: boolean;
   separateLibrary: boolean;
+  separateEvents: boolean;
   foreign: ForeignMode;
 }
 
@@ -76,6 +77,7 @@ const program = new Command()
   )
   .option('--no-separate-drive-in', 'keep drive-in films in the main table')
   .option('--no-separate-library', 'keep library screenings in the main table')
+  .option('--separate-events', 'give revivals and one-off events their own table', false)
   .option(
     '--foreign <mode>',
     'non-English releases: inline, separate or exclude',
@@ -110,7 +112,9 @@ const request: ScrapeRequest = {
 const sectionOptions: SectionOptions = {
   separateDriveIn: options.separateDriveIn,
   separateLibrary: options.separateLibrary,
+  separateEvents: options.separateEvents,
   foreign: options.foreign,
+  currentYear: Number(todayIn(options.timezone).slice(0, 4)),
 };
 
 const renderOptions: RenderOptions = {

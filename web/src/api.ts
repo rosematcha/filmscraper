@@ -24,6 +24,7 @@ export interface ScrapeParams {
   concurrency: number;
   separateDriveIn: boolean;
   separateLibrary: boolean;
+  separateEvents: boolean;
   foreign: 'inline' | 'separate' | 'exclude';
 }
 

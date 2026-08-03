@@ -48,6 +48,7 @@ export default function App(): React.JSX.Element {
   const [concurrency, setConcurrency] = useState(3);
   const [separateDriveIn, setSeparateDriveIn] = useState(true);
   const [separateLibrary, setSeparateLibrary] = useState(true);
+  const [separateEvents, setSeparateEvents] = useState(false);
   const [foreign, setForeign] = useState<'inline' | 'separate' | 'exclude'>('inline');
   const [showOptions, setShowOptions] = useState(false);
   const [running, setRunning] = useState(false);
@@ -98,6 +99,7 @@ export default function App(): React.JSX.Element {
           concurrency,
           separateDriveIn,
           separateLibrary,
+          separateEvents,
           foreign,
         },
         {
@@ -135,6 +137,7 @@ export default function App(): React.JSX.Element {
       concurrency,
       separateDriveIn,
       separateLibrary,
+      separateEvents,
       foreign,
     ],
   );
@@ -299,6 +302,16 @@ export default function App(): React.JSX.Element {
                   }}
                 />
                 library table
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={separateEvents}
+                  onChange={(e) => {
+                    setSeparateEvents(e.target.checked);
+                  }}
+                />
+                events table
               </label>
               <label className="inline-number">
                 not in English

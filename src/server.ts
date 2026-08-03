@@ -27,6 +27,7 @@ interface ScrapeBody {
   concurrency?: unknown;
   separateDriveIn?: unknown;
   separateLibrary?: unknown;
+  separateEvents?: unknown;
   foreign?: unknown;
 }
 
@@ -67,7 +68,9 @@ function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
     sections: {
       separateDriveIn: body.separateDriveIn !== false,
       separateLibrary: body.separateLibrary !== false,
+      separateEvents: body.separateEvents === true,
       foreign,
+      currentYear: Number(todayIn(TIMEZONE).slice(0, 4)),
     },
     request: { zip, from, to, radiusMiles: radius },
     options: {
