@@ -53,6 +53,7 @@ interface Accumulator {
   dates: Set<IsoDate>;
   formats: Map<string, Set<string>>;
   optional: Map<string, Set<string>>;
+  optionalDates: Map<string, Set<IsoDate>>;
   isEvent: boolean;
   sources: Set<string>;
   languages: Set<string>;
@@ -75,6 +76,7 @@ function blank(key: string, title: string, href: string): Accumulator {
     dates: new Set(),
     formats: new Map(),
     optional: new Map(),
+    optionalDates: new Map(),
     isEvent: false,
     sources: new Set(),
     languages: new Set(),
@@ -130,6 +132,7 @@ export function aggregate(
           const c = classifyAmenity(amenity);
           if (c.cls === 'access' || c.cls === 'language') {
             addTo(acc.optional, c.label, day.theater.name);
+            addTo(acc.optionalDates, c.label, day.date);
           } else if (c.cls === 'event') {
             acc.isEvent = true;
           }
@@ -215,6 +218,9 @@ function mergeAccumulators(
     for (const d of acc.dates) target.dates.add(d);
     for (const [label, set] of acc.formats) for (const t of set) addTo(target.formats, label, t);
     for (const [label, set] of acc.optional) for (const t of set) addTo(target.optional, label, t);
+    for (const [label, set] of acc.optionalDates) {
+      for (const d of set) addTo(target.optionalDates, label, d);
+    }
     for (const source of acc.sources) target.sources.add(source);
     for (const language of acc.languages) target.languages.add(language);
     target.isEvent ||= acc.isEvent;
@@ -234,6 +240,7 @@ function mergeAccumulators(
     dates: [...acc.dates].sort(),
     formats: new Map([...acc.formats].map(([k, v]) => [k, [...v].sort(byDistance)])),
     optional: new Map([...acc.optional].map(([k, v]) => [k, [...v].sort(byDistance)])),
+    optionalDates: new Map([...acc.optionalDates].map(([k, v]) => [k, [...v].sort()])),
     isEvent: acc.isEvent,
     sources: [...acc.sources].sort(),
     languages: acc.foreignGroups === acc.totalGroups ? [...acc.languages].sort() : [],

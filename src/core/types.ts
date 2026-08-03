@@ -96,6 +96,8 @@ export interface AggregatedMovie {
   readonly formats: ReadonlyMap<string, readonly string[]>;
   /** Opt-in amenity label -> theaters, for accessibility/language flags. */
   readonly optional: ReadonlyMap<string, readonly string[]>;
+  /** The same labels mapped to the dates they appear on. */
+  readonly optionalDates: ReadonlyMap<string, readonly IsoDate[]>;
   /** True when any group carried a special-event marker (e.g. Fathom Features). */
   readonly isEvent: boolean;
   /** Source ids that listed this film, e.g. `fandango`, `sapl`. */
