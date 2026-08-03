@@ -70,11 +70,22 @@ export function detectHorizon(
   today: IsoDate,
 ): IsoDate {
   const last = dates.at(-1) ?? today;
-  const counted = dates.filter((d) => d !== today);
+  // Only dates after today carry evidence. Today is thinned by expired
+  // showtimes, and anything earlier is simply gone — a past date at the start
+  // of the window reports zero listings, which would otherwise read as the
+  // posting boundary and collapse the horizon onto day one.
+  const counted = dates.filter((d) => d > today);
   if (counted.length === 0) return last;
 
+  // Measured on the source that posts weekly grids. A library screening a
+  // single film three weeks out must not imply the multiplexes have posted
+  // that far ahead — and with no such source in the run there is no posting
+  // boundary to find, because event calendars publish months ahead in full.
+  const scoped = days.filter((d) => d.sourceId === undefined || d.sourceId === 'fandango');
+  if (scoped.length === 0) return last;
+
   const liveCount = (date: IsoDate): number =>
-    days
+    scoped
       .filter((d) => d.date === date)
       .reduce((sum, d) => sum + d.movies.filter((m) => m.groups.some(isLive)).length, 0);
 
@@ -85,7 +96,7 @@ export function detectHorizon(
   const floor = peak * HORIZON_DENSITY;
   let horizon = dates[0] ?? last;
   for (const date of dates) {
-    if (date === today) {
+    if (date <= today) {
       horizon = date;
       continue;
     }
@@ -108,12 +119,31 @@ export function detectKnownFrom(
   todayIsPartial: boolean,
   horizon: IsoDate,
 ): IsoDate {
-  const first = dates[0] ?? today;
+  // Dates before today have no listings left at all, so they can never be the
+  // start of reliable data.
+  const usable = dates.filter((d) => d >= today);
+  const first = usable[0] ?? dates[0] ?? today;
   if (!todayIsPartial || first !== today) return first;
-  const next = dates[1];
+  const next = usable[1];
   // Never skip past the horizon; a one-day window has to use what it has.
   if (next === undefined || next > horizon) return first;
   return next;
+}
+
+/** Dates already gone by the time the scrape ran. */
+export function pastDatesWarning(
+  dates: readonly IsoDate[],
+  today: IsoDate,
+): ScrapeWarning | null {
+  const past = dates.filter((d) => d < today);
+  if (past.length === 0) return null;
+  return {
+    kind: 'partial-horizon',
+    message:
+      `${String(past.length)} date${past.length === 1 ? '' : 's'} in the window ` +
+      `(${past[0] ?? ''}${past.length > 1 ? ` – ${past.at(-1) ?? ''}` : ''}) ` +
+      `already passed, so no showtimes remain for them.`,
+  };
 }
 
 export function horizonWarning(horizon: IsoDate, dates: readonly IsoDate[]): ScrapeWarning | null {
@@ -166,6 +196,9 @@ export async function runPipeline(
   const today = todayIn(options.timezone);
   const expired = expiredTodayWarning(days, today);
   if (expired) warnings.push(expired);
+
+  const stale = pastDatesWarning(dates, today);
+  if (stale) warnings.push(stale);
 
   const horizon = detectHorizon(days, dates, today);
   const knownFrom = detectKnownFrom(dates, today, expired !== null, horizon);
