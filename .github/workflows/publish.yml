@@ -14,6 +14,9 @@ on:
       days:
         description: Days to cover, starting today
         default: '31'
+      concurrency:
+        description: Fandango pages to fetch at once
+        default: '6'
       dry_run:
         description: Scrape and build, but do not deploy
         type: boolean
@@ -31,6 +34,26 @@ jobs:
     timeout-minutes: 60
 
     steps:
+      # Checked before the 10-minute scrape rather than after it: an unset
+      # secret otherwise surfaces as the Netlify CLI failing to auto-detect a
+      # site, long after the expensive work is done.
+      - name: Check deploy credentials
+        if: ${{ inputs.dry_run != true }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          missing=""
+          [ -z "$NETLIFY_AUTH_TOKEN" ] && missing="$missing NETLIFY_AUTH_TOKEN"
+          [ -z "$NETLIFY_SITE_ID" ] && missing="$missing NETLIFY_SITE_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — add them under Settings → Secrets and variables → Actions, or re-run with dry_run enabled."
+            exit 1
+          fi
+          if [ -z "${{ vars.SITE_URL }}" ]; then
+            echo "::warning::SITE_URL variable is unset, so partial runs cannot reuse the previous dataset and will scrape every source."
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
@@ -52,7 +75,7 @@ jobs:
           pnpm publish:data
           --radius ${{ inputs.radius || '35' }}
           --days ${{ inputs.days || '31' }}
-          --concurrency 4
+          --concurrency ${{ inputs.concurrency || '6' }}
           --out web/public/data/latest.json
           --merge-from "$SITE_URL/data/latest.json"
           ${{ github.event_name == 'workflow_dispatch' && '--all' || '' }}
