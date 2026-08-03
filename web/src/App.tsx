@@ -1,5 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { scrape, type ProgressUpdate, type ScrapeResponse } from './api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  fetchSources,
+  scrape,
+  type ProgressUpdate,
+  type ScrapeResponse,
+  type SourceInfo,
+} from './api';
 
 /** A week spans a full theatrical program change, so it is the useful default. */
 const DEFAULT_WINDOW_DAYS = 7;
@@ -37,6 +43,8 @@ export default function App(): React.JSX.Element {
   const [showAccessibility, setShowAccessibility] = useState(false);
   const [showLanguage, setShowLanguage] = useState(false);
 
+  const [sources, setSources] = useState<SourceInfo[]>([]);
+  const [chosen, setChosen] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<ProgressUpdate | null>(null);
   const [log, setLog] = useState<string[]>([]);
@@ -46,12 +54,20 @@ export default function App(): React.JSX.Element {
   const [copied, setCopied] = useState(false);
   const abort = useRef<AbortController | null>(null);
 
+  useEffect(() => {
+    void fetchSources().then((list) => {
+      setSources(list);
+      setChosen(list.filter((s) => s.enabledByDefault).map((s) => s.id));
+    });
+  }, []);
+
   const invalidRange = to < from;
+  const noSources = sources.length > 0 && chosen.length === 0;
 
   const run = useCallback(
     (event: React.FormEvent) => {
       event.preventDefault();
-      if (running || invalidRange) return;
+      if (running || invalidRange || noSources) return;
 
       abort.current?.abort();
       const controller = new AbortController();
@@ -65,7 +81,7 @@ export default function App(): React.JSX.Element {
       setCopied(false);
 
       void scrape(
-        { zip, from, to, radius, keepYears, showAccessibility, showLanguage },
+        { zip, from, to, radius, keepYears, showAccessibility, showLanguage, sources: chosen },
         {
           onProgress: (update) => {
             setProgress(update);
@@ -86,7 +102,19 @@ export default function App(): React.JSX.Element {
           if (!controller.signal.aborted) setRunning(false);
         });
     },
-    [running, invalidRange, zip, from, to, radius, keepYears, showAccessibility, showLanguage],
+    [
+      running,
+      invalidRange,
+      noSources,
+      zip,
+      from,
+      to,
+      radius,
+      keepYears,
+      showAccessibility,
+      showLanguage,
+      chosen,
+    ],
   );
 
   const copy = useCallback(() => {
@@ -163,9 +191,28 @@ export default function App(): React.JSX.Element {
             required
           />
         </label>
-        <button type="submit" disabled={running || invalidRange}>
+        <button type="submit" disabled={running || invalidRange || noSources}>
           {running ? 'Scraping…' : 'Scrape'}
         </button>
+
+        <div className="toggles sources">
+          {sources.map((source) => (
+            <label key={source.id}>
+              <input
+                type="checkbox"
+                checked={chosen.includes(source.id)}
+                onChange={(e) => {
+                  setChosen((prev) =>
+                    e.target.checked
+                      ? [...prev, source.id]
+                      : prev.filter((id) => id !== source.id),
+                  );
+                }}
+              />
+              {source.label}
+            </label>
+          ))}
+        </div>
 
         <div className="toggles">
           <label>
@@ -202,6 +249,7 @@ export default function App(): React.JSX.Element {
       </form>
 
       {invalidRange && <p className="status error">“To” is before “from”.</p>}
+      {noSources && <p className="status error">Pick at least one source.</p>}
 
       {(running || log.length > 0) && !error && (
         <div className="status">

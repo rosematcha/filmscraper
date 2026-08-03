@@ -8,7 +8,7 @@ import { renderMarkdown, renderRows } from './core/markdown.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
 import type { RenderOptions, ScrapeRequest } from './core/types.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
-import { FandangoSource } from './sources/fandango/index.js';
+import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
 
 const PORT = Number(process.env['PORT'] ?? 8787);
 const TIMEZONE = process.env['TIMEZONE'] ?? 'America/Chicago';
@@ -22,11 +22,13 @@ interface ScrapeBody {
   keepYears?: unknown;
   showAccessibility?: unknown;
   showLanguage?: unknown;
+  sources?: unknown;
 }
 
 interface ParsedBody {
   request: ScrapeRequest;
   options: RenderOptions;
+  sources: string[];
 }
 
 function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
@@ -40,7 +42,14 @@ function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
   const radius = typeof body.radius === 'number' && body.radius > 0 ? body.radius : 15;
   if (radius > 100) return { error: 'radius must be 100 miles or less' };
 
+  const known = new Set(SOURCES.map((s) => s.id));
+  const sources = Array.isArray(body.sources)
+    ? body.sources.filter((id): id is string => typeof id === 'string' && known.has(id))
+    : [...DEFAULT_SOURCE_IDS];
+  if (sources.length === 0) return { error: 'pick at least one source' };
+
   return {
+    sources,
     request: { zip, from, to, radiusMiles: radius },
     options: {
       keepYears: body.keepYears === true,
@@ -55,6 +64,8 @@ app.use('/api/*', cors());
 
 app.get('/api/health', (c) => c.json({ ok: true, timezone: TIMEZONE }));
 
+app.get('/api/sources', (c) => c.json({ sources: SOURCES }));
+
 /**
  * Scrape and stream progress.
  *
@@ -65,7 +76,7 @@ app.post('/api/scrape', async (c) => {
   const parsed = parseBody(await c.req.json<ScrapeBody>().catch(() => ({})));
   if ('error' in parsed) return c.json({ error: parsed.error }, 400);
 
-  const { request, options } = parsed;
+  const { request, options, sources } = parsed;
   return streamSSE(c, async (stream) => {
     const session = new BrowserSession({ ...DEFAULT_BROWSER_OPTIONS, timezone: TIMEZONE });
     const send = async (event: string, data: unknown): Promise<void> => {
@@ -73,7 +84,8 @@ app.post('/api/scrape', async (c) => {
     };
 
     try {
-      await session.open();
+      // Only Fandango needs Playwright; feed-only runs skip the browser.
+      if (needsBrowser(sources)) await session.open();
       const aliases = await loadAliases();
       await send('progress', {
         message: `${request.zip} · ${request.from} → ${request.to} · ${String(request.radiusMiles)} mi`,
@@ -85,7 +97,7 @@ app.post('/api/scrape', async (c) => {
       // is synchronous, and buffering these until the run finished was why the
       // UI sat silent for the whole scrape.
       let writes = Promise.resolve();
-      const result = await runPipeline([new FandangoSource(session)], request, {
+      const result = await runPipeline(buildSources(sources, session), request, {
         aliases,
         keepYears: options.keepYears,
         timezone: TIMEZONE,

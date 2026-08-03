@@ -1,3 +1,17 @@
+export interface SourceInfo {
+  id: string;
+  label: string;
+  needsBrowser: boolean;
+  enabledByDefault: boolean;
+}
+
+export async function fetchSources(): Promise<SourceInfo[]> {
+  const response = await fetch('/api/sources');
+  if (!response.ok) return [];
+  const body = (await response.json()) as { sources?: SourceInfo[] };
+  return body.sources ?? [];
+}
+
 export interface ScrapeParams {
   zip: string;
   from: string;
@@ -6,6 +20,7 @@ export interface ScrapeParams {
   keepYears: boolean;
   showAccessibility: boolean;
   showLanguage: boolean;
+  sources: string[];
 }
 
 export interface ResultRow {

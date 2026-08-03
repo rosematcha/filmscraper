@@ -6,7 +6,7 @@ import { renderMarkdown, renderWarnings } from './core/markdown.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
 import type { ProgressUpdate, RenderOptions, ScrapeRequest } from './core/types.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
-import { FandangoSource } from './sources/fandango/index.js';
+import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -42,6 +42,7 @@ interface CliOptions {
   showLanguage: boolean;
   headed: boolean;
   quiet: boolean;
+  sources: string[];
 }
 
 const program = new Command()
@@ -56,6 +57,12 @@ const program = new Command()
   .option('--keep-years', 'keep (YYYY) release years in titles', false)
   .option('--show-accessibility', 'note open/closed caption screenings', false)
   .option('--show-language', 'note dubbed/subtitled screenings', false)
+  .option(
+    '-s, --sources <ids>',
+    `comma-separated sources (${SOURCES.map((x) => x.id).join(', ')})`,
+    (value: string) => value.split(',').map((v) => v.trim()).filter(Boolean),
+    [...DEFAULT_SOURCE_IDS],
+  )
   .option('--headed', 'run the browser headed, for debugging', false)
   .option('-q, --quiet', 'suppress progress output', false);
 
@@ -90,18 +97,29 @@ const progress = ({ message, step, total }: ProgressUpdate): void => {
   log(`[${String(step)}/${String(total)}] ${message}`);
 };
 
+const unknown = options.sources.filter((id) => !SOURCES.some((s) => s.id === id));
+if (unknown.length > 0) {
+  console.error(`unknown source(s): ${unknown.join(', ')}`);
+  process.exit(1);
+}
+
 const session = new BrowserSession({
   ...DEFAULT_BROWSER_OPTIONS,
   timezone: options.timezone,
   headless: !options.headed,
 });
+const wantsBrowser = needsBrowser(options.sources);
 
 try {
-  await session.open();
+  // Only Fandango needs Playwright; a feeds-only run should not pay for it.
+  if (wantsBrowser) await session.open();
   const aliases = await loadAliases();
-  log(`Scraping ${request.zip} · ${from}${to === from ? '' : ` → ${to}`} · ${request.radiusMiles} mi`);
+  log(
+    `Scraping ${request.zip} · ${from}${to === from ? '' : ` → ${to}`} · ${request.radiusMiles} mi · ` +
+      options.sources.join(', '),
+  );
 
-  const result = await runPipeline([new FandangoSource(session)], request, {
+  const result = await runPipeline(buildSources(options.sources, session), request, {
     aliases,
     keepYears: options.keepYears,
     timezone: options.timezone,

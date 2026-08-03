@@ -295,3 +295,8 @@ pre {
   color: var(--muted);
   max-width: 62ch;
 }
+
+/* Source checkboxes sit above the display toggles, sharing their quiet style. */
+.sources {
+  padding-top: 0.15rem;
+}
