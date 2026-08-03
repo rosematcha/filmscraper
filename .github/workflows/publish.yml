@@ -54,10 +54,15 @@ jobs:
       - name: Deploy to Netlify
         # Deployed straight from CI rather than committed, so the scheduled runs
         # never appear as bot commits in the repository history.
+        #
+        # `--package` is required: netlify-cli ships two binaries (ntl and
+        # netlify), and a bare `pnpm dlx netlify-cli` cannot choose between them
+        # and fails with ERR_PNPM_DLX_MULTIPLE_BINS.
         run: >
-          pnpm dlx netlify-cli@17 deploy
+          pnpm --package=netlify-cli@17 dlx netlify deploy
           --dir web/dist
           --prod
+          --site "$NETLIFY_SITE_ID"
           --message "listings ${{ github.run_number }}"
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
