@@ -45,6 +45,8 @@ interface Accumulator {
   key: string;
   title: string;
   href: string;
+  /** Venue count behind the current title, so the widest listing wins it. */
+  titleWeight: number;
   ids: Set<string>;
   hrefs: Set<string>;
   theaters: Set<string>;
@@ -59,6 +61,7 @@ function blank(key: string, title: string, href: string): Accumulator {
     key,
     title,
     href,
+    titleWeight: 0,
     ids: new Set(),
     hrefs: new Set(),
     theaters: new Set(),
@@ -153,6 +156,7 @@ function mergeAccumulators(
 
   const buckets: Accumulator[] = [];
   for (const acc of accumulators) {
+    acc.titleWeight = acc.theaters.size;
     const forced = [...acc.ids].map((id) => forcedLeader.get(id)).find((v) => v !== undefined);
     const target = buckets.find((b) => {
       if (isBarred(b.ids, acc.ids)) return false;
@@ -168,10 +172,15 @@ function mergeAccumulators(
       buckets.push(acc);
       continue;
     }
-    // Shortest title wins: "Backrooms" reads better than the bonus-footage edition.
-    if (acc.title.length < target.title.length) {
+    // The listing seen at the most venues supplies the title and link: a
+    // drive-in spelling "Spiderman" should not outrank Fandango's nineteen
+    // screens. Among equals the shortest title wins, so "Backrooms" beats the
+    // bonus-footage edition.
+    const weight = acc.theaters.size;
+    if (weight > target.titleWeight || (weight === target.titleWeight && acc.title.length < target.title.length)) {
       target.title = acc.title;
       target.href = acc.href;
+      target.titleWeight = weight;
     }
     for (const id of acc.ids) target.ids.add(id);
     for (const href of acc.hrefs) target.hrefs.add(href);

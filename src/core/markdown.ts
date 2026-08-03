@@ -25,7 +25,9 @@ export function movieUrl(
   const known = windowDates.filter((d) => d >= knownFrom && d <= horizon);
   const missesKnownDate = known.some((d) => !movie.dates.includes(d));
   if (!missesKnownDate) return base;
-  return `${base}?date=${movie.dates[0] ?? ''}`;
+  // Event links from other sources already carry a query string.
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}date=${movie.dates[0] ?? ''}`;
 }
 
 export interface SortedMovie {

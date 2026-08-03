@@ -86,13 +86,14 @@ export function mergeKey(title: string): string {
     key = stripped;
   }
 
+  // Separators are dropped entirely rather than normalised, so an independent
+  // venue's "Spiderman: Brand New Day" folds into Fandango's "Spider-Man:
+  // Brand New Day" instead of becoming a second row.
   return key
     .replace(/&/g, ' and ')
     .replace(LEADING_ARTICLE, '')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
     .toLowerCase()
-    .replace(/\s+/g, '-');
+    .replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
 /** Fandango's numeric movie id, parsed out of a `movie-overview` path. */
