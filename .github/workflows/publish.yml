@@ -13,6 +13,10 @@ on:
       days:
         description: Days to cover, starting today
         default: '31'
+      dry_run:
+        description: Scrape and build, but do not deploy
+        type: boolean
+        default: false
 
 # One run at a time: two scrapes deploying at once would race.
 concurrency:
@@ -52,6 +56,7 @@ jobs:
         run: pnpm --filter filmscraper-web build
 
       - name: Deploy to Netlify
+        if: ${{ inputs.dry_run != true }}
         # Deployed straight from CI rather than committed, so the scheduled runs
         # never appear as bot commits in the repository history.
         #
