@@ -101,14 +101,18 @@ jobs:
         # Deployed straight from CI rather than committed, so the scheduled runs
         # never appear as bot commits in the repository history.
         #
-        # `--package` is required: netlify-cli ships two binaries (ntl and
-        # netlify), and a bare `pnpm dlx netlify-cli` cannot choose between them
-        # and fails with ERR_PNPM_DLX_MULTIPLE_BINS.
+        # Two CLI quirks, both fatal without these flags:
+        #  - `--package` because netlify-cli ships two binaries (ntl, netlify)
+        #    and a bare `pnpm dlx netlify-cli` fails with MULTIPLE_BINS.
+        #  - `--filter` because this is a pnpm workspace. The CLI scans for
+        #    package.json names, finds `filmscraper` and `filmscraper-web`, and
+        #    refuses to guess — even when `--site` already names the target.
         run: >
           pnpm --package=netlify-cli@17 dlx netlify deploy
           --dir web/dist
           --prod
           --site "$NETLIFY_SITE_ID"
+          --filter filmscraper
           --message "listings ${{ github.run_number }}"
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
