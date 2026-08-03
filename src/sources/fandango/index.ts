@@ -12,7 +12,13 @@ export class FandangoSource implements Source {
       zip: request.zip,
       dates: request.dates,
       radiusMiles: request.radiusMiles,
-      ...(request.onProgress ? { onProgress: request.onProgress } : {}),
+      ...(request.onProgress
+        ? {
+            onProgress: (message: string, step: number, total: number): void => {
+              request.onProgress?.({ message, step, total });
+            },
+          }
+        : {}),
     });
   }
 }

@@ -30,14 +30,21 @@ export interface ScrapeWarning {
 
 export interface ScrapeResponse {
   dates: string[];
+  horizon: string;
   theaters: TheaterInfo[];
   warnings: ScrapeWarning[];
   rows: ResultRow[];
   markdown: string;
 }
 
+export interface ProgressUpdate {
+  message: string;
+  step: number;
+  total: number;
+}
+
 export interface ScrapeHandlers {
-  onProgress: (message: string) => void;
+  onProgress: (update: ProgressUpdate) => void;
   onResult: (result: ScrapeResponse) => void;
   onError: (message: string) => void;
 }
@@ -109,8 +116,14 @@ function dispatch(frame: string, handlers: ScrapeHandlers): void {
     return;
   }
 
-  if (event === 'progress' && isMessage(payload)) handlers.onProgress(payload.message);
-  else if (event === 'failed' && isMessage(payload)) handlers.onError(payload.message);
+  if (event === 'progress' && isMessage(payload)) {
+    const { step, total } = payload as Partial<ProgressUpdate>;
+    handlers.onProgress({
+      message: payload.message,
+      step: typeof step === 'number' ? step : 0,
+      total: typeof total === 'number' ? total : 0,
+    });
+  } else if (event === 'failed' && isMessage(payload)) handlers.onError(payload.message);
   else if (event === 'result') handlers.onResult(payload as ScrapeResponse);
 }
 

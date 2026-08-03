@@ -75,20 +75,30 @@ app.post('/api/scrape', async (c) => {
     try {
       await session.open();
       const aliases = await loadAliases();
-      await send('progress', { message: `Scraping ${request.zip} · ${request.from} → ${request.to}` });
+      await send('progress', {
+        message: `${request.zip} · ${request.from} → ${request.to} · ${String(request.radiusMiles)} mi`,
+        step: 0,
+        total: 0,
+      });
 
-      const queue: string[] = [];
+      // Writes are chained rather than awaited inline: the pipeline's callback
+      // is synchronous, and buffering these until the run finished was why the
+      // UI sat silent for the whole scrape.
+      let writes = Promise.resolve();
       const result = await runPipeline([new FandangoSource(session)], request, {
         aliases,
         keepYears: options.keepYears,
         timezone: TIMEZONE,
-        onProgress: (message) => queue.push(message),
+        onProgress: (update) => {
+          writes = writes.then(() => send('progress', update));
+        },
       });
-      for (const message of queue) await send('progress', { message });
+      await writes;
 
       await send('result', {
         request: result.request,
         dates: result.dates,
+        horizon: result.horizon,
         theaters: result.theaters,
         warnings: result.warnings,
         rows: renderRows(result, options, aliases.theaterNames).map((row) => ({

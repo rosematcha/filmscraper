@@ -1,5 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { scrape, type ScrapeResponse } from './api';
+import { scrape, type ProgressUpdate, type ScrapeResponse } from './api';
+
+/** A week spans a full theatrical program change, so it is the useful default. */
+const DEFAULT_WINDOW_DAYS = 7;
 
 /** Today in the market's timezone, which is the only window that makes sense as a default. */
 function today(): string {
@@ -28,14 +31,15 @@ export default function App(): React.JSX.Element {
   const start = today();
   const [zip, setZip] = useState('78205');
   const [from, setFrom] = useState(start);
-  const [to, setTo] = useState(addDays(start, 1));
+  const [to, setTo] = useState(addDays(start, DEFAULT_WINDOW_DAYS - 1));
   const [radius, setRadius] = useState(15);
   const [keepYears, setKeepYears] = useState(false);
   const [showAccessibility, setShowAccessibility] = useState(false);
   const [showLanguage, setShowLanguage] = useState(false);
 
   const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<string[]>([]);
+  const [progress, setProgress] = useState<ProgressUpdate | null>(null);
+  const [log, setLog] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ScrapeResponse | null>(null);
   const [showMarkdown, setShowMarkdown] = useState(false);
@@ -54,7 +58,8 @@ export default function App(): React.JSX.Element {
       abort.current = controller;
 
       setRunning(true);
-      setProgress([]);
+      setProgress(null);
+      setLog([]);
       setError(null);
       setResult(null);
       setCopied(false);
@@ -62,8 +67,9 @@ export default function App(): React.JSX.Element {
       void scrape(
         { zip, from, to, radius, keepYears, showAccessibility, showLanguage },
         {
-          onProgress: (message) => {
-            setProgress((prev) => [...prev, message]);
+          onProgress: (update) => {
+            setProgress(update);
+            setLog((prev) => [...prev, update.message]);
           },
           onResult: (payload) => {
             setResult(payload);
@@ -197,8 +203,27 @@ export default function App(): React.JSX.Element {
 
       {invalidRange && <p className="status error">“To” is before “from”.</p>}
 
-      {(running || progress.length > 0) && !error && (
-        <p className="status">{progress.join('\n') || 'Starting…'}</p>
+      {(running || log.length > 0) && !error && (
+        <div className="status">
+          <div className="ticker">
+            {progress && progress.total > 0 && (
+              <>
+                <span className="count">
+                  day {progress.step} / {progress.total}
+                </span>
+                <span
+                  className="bar"
+                  style={
+                    {
+                      '--fill': `${String((progress.step / progress.total) * 100)}%`,
+                    } as React.CSSProperties
+                  }
+                />
+              </>
+            )}
+            <span className="now">{progress?.message ?? 'starting…'}</span>
+          </div>
+        </div>
       )}
 
       {error !== null && <p className="status error">{error}</p>}

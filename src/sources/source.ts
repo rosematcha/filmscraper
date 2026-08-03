@@ -1,10 +1,10 @@
-import type { IsoDate, ScrapeWarning, VenueDay } from '../core/types.js';
+import type { IsoDate, ProgressFn, ScrapeWarning, VenueDay } from '../core/types.js';
 
 export interface SourceRequest {
   readonly zip: string;
   readonly dates: readonly IsoDate[];
   readonly radiusMiles: number;
-  readonly onProgress?: (message: string) => void;
+  readonly onProgress?: ProgressFn;
 }
 
 export interface SourceResult {

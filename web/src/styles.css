@@ -140,7 +140,42 @@ button:disabled {
   font-size: 0.75rem;
   line-height: 1.7;
   color: var(--faint);
-  white-space: pre-wrap;
+}
+
+/* One evolving line rather than an accumulating log: a week-long scrape takes
+   minutes, and the useful question is only ever "how far along". */
+.ticker {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bar {
+  flex: 0 0 8rem;
+  height: 1px;
+  background: var(--rule);
+  position: relative;
+}
+
+.bar::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--fill, 0%);
+  background: var(--muted);
+  transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.now {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .error {
