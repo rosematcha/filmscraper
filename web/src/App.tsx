@@ -45,6 +45,8 @@ export default function App(): React.JSX.Element {
 
   const [sources, setSources] = useState<SourceInfo[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
+  const [concurrency, setConcurrency] = useState(3);
+  const [showOptions, setShowOptions] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<ProgressUpdate | null>(null);
   const [log, setLog] = useState<string[]>([]);
@@ -81,7 +83,17 @@ export default function App(): React.JSX.Element {
       setCopied(false);
 
       void scrape(
-        { zip, from, to, radius, keepYears, showAccessibility, showLanguage, sources: chosen },
+        {
+          zip,
+          from,
+          to,
+          radius,
+          keepYears,
+          showAccessibility,
+          showLanguage,
+          sources: chosen,
+          concurrency,
+        },
         {
           onProgress: (update) => {
             setProgress(update);
@@ -114,6 +126,7 @@ export default function App(): React.JSX.Element {
       showAccessibility,
       showLanguage,
       chosen,
+      concurrency,
     ],
   );
 
@@ -195,26 +208,39 @@ export default function App(): React.JSX.Element {
           {running ? 'Scraping…' : 'Scrape'}
         </button>
 
-        <div className="toggles sources">
-          {sources.map((source) => (
-            <label key={source.id}>
-              <input
-                type="checkbox"
-                checked={chosen.includes(source.id)}
-                onChange={(e) => {
-                  setChosen((prev) =>
-                    e.target.checked
-                      ? [...prev, source.id]
-                      : prev.filter((id) => id !== source.id),
-                  );
-                }}
-              />
-              {source.label}
-            </label>
-          ))}
-        </div>
+        <button
+          type="button"
+          className="disclosure"
+          aria-expanded={showOptions}
+          onClick={() => {
+            setShowOptions((v) => !v);
+          }}
+        >
+          {showOptions ? 'hide options' : 'options'}
+        </button>
 
-        <div className="toggles">
+        {showOptions && (
+          <>
+            <div className="toggles sources">
+              {sources.map((source) => (
+                <label key={source.id}>
+                  <input
+                    type="checkbox"
+                    checked={chosen.includes(source.id)}
+                    onChange={(e) => {
+                      setChosen((prev) =>
+                        e.target.checked
+                          ? [...prev, source.id]
+                          : prev.filter((id) => id !== source.id),
+                      );
+                    }}
+                  />
+                  {source.label}
+                </label>
+              ))}
+            </div>
+
+            <div className="toggles">
           <label>
             <input
               type="checkbox"
@@ -243,9 +269,24 @@ export default function App(): React.JSX.Element {
                 setShowLanguage(e.target.checked);
               }}
             />
-            language
-          </label>
-        </div>
+                language
+              </label>
+              <label className="inline-number">
+                parallel
+                <input
+                  type="number"
+                  min={1}
+                  max={8}
+                  step={1}
+                  value={concurrency}
+                  onChange={(e) => {
+                    setConcurrency(Number(e.target.value));
+                  }}
+                />
+              </label>
+            </div>
+          </>
+        )}
       </form>
 
       {invalidRange && <p className="status error">“To” is before “from”.</p>}
@@ -257,7 +298,7 @@ export default function App(): React.JSX.Element {
             {progress && progress.total > 0 && (
               <>
                 <span className="count">
-                  day {progress.step} / {progress.total}
+                  {progress.step} / {progress.total}
                 </span>
                 <span
                   className="bar"

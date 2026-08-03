@@ -21,6 +21,7 @@ export interface ScrapeParams {
   showAccessibility: boolean;
   showLanguage: boolean;
   sources: string[];
+  concurrency: number;
 }
 
 export interface ResultRow {

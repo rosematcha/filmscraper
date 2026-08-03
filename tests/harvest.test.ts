@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { decideNextPage } from '../src/sources/fandango/harvest.js';
+import {
+  clampConcurrency,
+  decideNextPage,
+  MAX_CONCURRENCY,
+} from '../src/sources/fandango/harvest.js';
 
 describe('decideNextPage', () => {
   it('keeps paging while pages stay inside the radius', () => {
@@ -23,5 +27,27 @@ describe('decideNextPage', () => {
 
   it('keeps a page that lands exactly on the radius', () => {
     expect(decideNextPage(10, 15, 15)).toBe('continue');
+  });
+});
+
+describe('clampConcurrency', () => {
+  it('defaults to serial when unset', () => {
+    expect(clampConcurrency(undefined)).toBe(1);
+    expect(clampConcurrency(Number.NaN)).toBe(1);
+  });
+
+  it('keeps a sensible request as-is', () => {
+    expect(clampConcurrency(3)).toBe(3);
+    expect(clampConcurrency(1)).toBe(1);
+  });
+
+  it('refuses to hammer the site', () => {
+    expect(clampConcurrency(100)).toBe(MAX_CONCURRENCY);
+    expect(clampConcurrency(0)).toBe(1);
+    expect(clampConcurrency(-5)).toBe(1);
+  });
+
+  it('rounds fractional requests down', () => {
+    expect(clampConcurrency(2.9)).toBe(2);
   });
 });
