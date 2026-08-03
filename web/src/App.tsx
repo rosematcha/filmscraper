@@ -6,6 +6,8 @@ import {
   type ScrapeResponse,
   type SourceInfo,
 } from './api';
+import { ALIASES, loadDataset, renderDataset, type Dataset } from './dataset';
+import { DEFAULT_SECTION_OPTIONS } from '@core/core/sections.js';
 
 /** A week spans a full theatrical program change, so it is the useful default. */
 const DEFAULT_WINDOW_DAYS = 7;
@@ -76,6 +78,8 @@ export default function App(): React.JSX.Element {
   const [separateOpenCaptions, setSeparateOpenCaptions] = useState(false);
   const [foreign, setForeign] = useState<'inline' | 'separate' | 'exclude'>('separate');
   const [showOptions, setShowOptions] = useState(false);
+  const [dataset, setDataset] = useState<Dataset | null>(null);
+  const [liveAvailable, setLiveAvailable] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Map<string, ProgressUpdate>>(new Map());
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +92,15 @@ export default function App(): React.JSX.Element {
     void fetchSources().then((list) => {
       setSources(list);
       setChosen(list.filter((s) => s.enabledByDefault).map((s) => s.id));
+      setLiveAvailable(list.length > 0);
+    });
+    // The deployed site has no API at all; it reads the nightly scrape instead.
+    void loadDataset().then((d) => {
+      if (!d) return;
+      setDataset(d);
+      setZip(d.zip);
+      setFrom(d.from);
+      setTo(d.to < addDays(d.from, DEFAULT_WINDOW_DAYS - 1) ? d.to : addDays(d.from, DEFAULT_WINDOW_DAYS - 1));
     });
   }, []);
 
@@ -177,31 +190,110 @@ export default function App(): React.JSX.Element {
     ],
   );
 
+  const fromDataset = useMemo(() => {
+    if (!dataset) return null;
+    try {
+      return renderDataset(
+        dataset,
+        from,
+        to,
+        radius,
+        { keepYears, showAccessibility: false, showLanguage: false },
+        {
+          ...DEFAULT_SECTION_OPTIONS,
+          separateDriveIn,
+          separateLibrary,
+          separateEvents,
+          separateOpenCaptions,
+          foreign,
+          currentYear: Number(from.slice(0, 4)),
+        },
+        ALIASES,
+      );
+    } catch {
+      return null;
+    }
+  }, [
+    dataset,
+    from,
+    to,
+    radius,
+    keepYears,
+    separateDriveIn,
+    separateLibrary,
+    separateEvents,
+    separateOpenCaptions,
+    foreign,
+  ]);
+
+  /** The nightly dataset when there is one; otherwise whatever a live run returned. */
+  const view = useMemo(() => {
+    if (fromDataset) {
+      return {
+        rows: fromDataset.rows.map((r) => ({
+          title: r.movie.title,
+          url: r.url,
+          notes: r.notes,
+          theaterCount: r.movie.theaters.length,
+          dateCount: r.movie.dates.length,
+          section: r.section ?? 'main',
+          sectionHeading: r.sectionHeading ?? null,
+          theaters: r.movie.theaters.map((t) => ALIASES.theaterNames[t] ?? t),
+          dates: [...r.movie.dates],
+        })),
+        markdown: fromDataset.markdown,
+        theaters: fromDataset.theaters,
+        warnings: dataset?.warnings ?? [],
+      };
+    }
+    if (!result) return null;
+    return {
+      rows: result.rows,
+      markdown: result.markdown,
+      theaters: result.theaters,
+      warnings: result.warnings,
+    };
+  }, [fromDataset, result, dataset]);
+
   const copy = useCallback(() => {
-    if (!result) return;
-    void navigator.clipboard.writeText(result.markdown).then(() => {
+    if (!view) return;
+    void navigator.clipboard.writeText(view.markdown).then(() => {
       setCopied(true);
       // Inline label change instead of a toast; it reverts on its own.
       setTimeout(() => {
         setCopied(false);
       }, 2000);
     });
-  }, [result]);
+  }, [view]);
 
   const summary = useMemo(() => {
-    if (!result) return '';
+    if (!view) return '';
     // Rows can repeat across tables, so count distinct films rather than rows.
-    const titles = new Set(result.rows.map((r) => r.title));
+    const titles = new Set(view.rows.map((r) => r.title));
     const movies = `${String(titles.size)} movie${titles.size === 1 ? '' : 's'}`;
-    const theaters = `${String(result.theaters.length)} theater${result.theaters.length === 1 ? '' : 's'}`;
+    const theaters = `${String(view.theaters.length)} theater${view.theaters.length === 1 ? '' : 's'}`;
     // No distance here: the drive-in and library tables are radius-exempt, so
     // the furthest venue would contradict the miles field beside it.
     return `${movies} · ${theaters}`;
-  }, [result]);
+  }, [view]);
 
   return (
     <main>
-      <h1>filmscraper</h1>
+      <h1>
+        filmscraper
+        {dataset && (
+          <span className="stamp">
+            {' · '}
+            {new Date(dataset.generatedAt).toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+            {` · ${dataset.zip} · to ${String(dataset.radiusMiles)} mi`}
+          </span>
+        )}
+      </h1>
 
       <form onSubmit={run}>
         <label>
@@ -214,6 +306,8 @@ export default function App(): React.JSX.Element {
             onChange={(e) => {
               setZip(e.target.value);
             }}
+            // The nightly dataset covers one ZIP; only a live run can change it.
+            readOnly={!liveAvailable}
             required
           />
         </label>
@@ -222,6 +316,7 @@ export default function App(): React.JSX.Element {
           <input
             type="date"
             value={from}
+            {...(dataset && !liveAvailable ? { min: dataset.from, max: dataset.to } : {})}
             onChange={(e) => {
               setFrom(e.target.value);
             }}
@@ -234,6 +329,7 @@ export default function App(): React.JSX.Element {
             type="date"
             value={to}
             min={from}
+            {...(dataset && !liveAvailable ? { max: dataset.to } : {})}
             onChange={(e) => {
               setTo(e.target.value);
             }}
@@ -245,7 +341,8 @@ export default function App(): React.JSX.Element {
           <input
             type="number"
             min={1}
-            max={100}
+            // Filtering below the scraped radius is free; above it there is no data.
+            max={dataset && !liveAvailable ? dataset.radiusMiles : 100}
             step={1}
             value={radius}
             onChange={(e) => {
@@ -254,9 +351,11 @@ export default function App(): React.JSX.Element {
             required
           />
         </label>
-        <button type="submit" disabled={running || invalidRange || noSources}>
-          {running ? 'Scraping…' : 'Scrape'}
-        </button>
+        {liveAvailable && (
+          <button type="submit" disabled={running || invalidRange || noSources}>
+            {running ? 'Scraping…' : 'Scrape'}
+          </button>
+        )}
 
         <button
           type="button"
@@ -271,6 +370,7 @@ export default function App(): React.JSX.Element {
 
         {showOptions && (
           <div className="options">
+            {liveAvailable && (
             <div className="optgroup">
               <span className="optgroup__title">Sources</span>
               <div className="optgroup__items">
@@ -292,6 +392,7 @@ export default function App(): React.JSX.Element {
                 ))}
               </div>
             </div>
+            )}
 
             <div className="optgroup">
               <span className="optgroup__title">Tables</span>
@@ -387,7 +488,7 @@ export default function App(): React.JSX.Element {
       {invalidRange && <p className="status error">“To” is before “from”.</p>}
       {noSources && <p className="status error">Pick at least one source.</p>}
 
-      {(running || progress.size > 0) && !error && (
+      {liveAvailable && (running || progress.size > 0) && !error && (
         <div className="status">
           {[...progress.values()].map((row) => {
             const label = sources.find((s) => s.id === row.sourceId)?.label ?? row.sourceId;
@@ -428,19 +529,26 @@ export default function App(): React.JSX.Element {
 
       {error !== null && <p className="status error">{error}</p>}
 
-      {result?.warnings.map((warning) => (
+      {view?.warnings.map((warning) => (
         <p className="warning" key={warning.kind + warning.message}>
           {warning.message}
         </p>
       ))}
 
-      {result?.rows.length === 0 && !running && (
+      {view?.rows.length === 0 && !running && (
         <p className="empty">
           Nothing playing in that window within {radius} miles of {zip}.
         </p>
       )}
 
-      {result && result.rows.length > 0 && (
+      {!dataset && !liveAvailable && (
+        <p className="empty">
+          No listings published yet. The scrape runs daily at 1pm Central; this page
+          fills in after the first run.
+        </p>
+      )}
+
+      {view && view.rows.length > 0 && (
         <>
           <div className="summary">
             <span>{summary}</span>
@@ -460,7 +568,7 @@ export default function App(): React.JSX.Element {
           </div>
 
           {showMarkdown ? (
-            <pre>{result.markdown}</pre>
+            <pre>{view.markdown}</pre>
           ) : (
             <table>
               <thead>
@@ -471,10 +579,10 @@ export default function App(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {result.rows.map((row, index) => (
+                {view.rows.map((row, index) => (
                   <Fragment key={`${row.section}:${row.url}`}>
                     {row.sectionHeading !== null &&
-                      row.sectionHeading !== result.rows[index - 1]?.sectionHeading && (
+                      row.sectionHeading !== view.rows[index - 1]?.sectionHeading && (
                         <tr className="section-row">
                           <th colSpan={3}>{row.sectionHeading}</th>
                         </tr>

@@ -222,6 +222,10 @@ button:disabled {
   }
 }
 
+.stamp {
+  color: var(--faint);
+}
+
 .error {
   color: oklch(52% 0.17 27);
 }
