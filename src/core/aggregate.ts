@@ -1,4 +1,4 @@
-import { classifyAmenity } from './amenities.js';
+import { classifyAmenity, foreignLanguageOf } from './amenities.js';
 import { displayTitle, mergeKey, movieIdFromHref } from './titles.js';
 import type { AggregatedMovie, IsoDate, ShowtimeGroup, Theater, VenueDay } from './types.js';
 
@@ -54,6 +54,11 @@ interface Accumulator {
   formats: Map<string, Set<string>>;
   optional: Map<string, Set<string>>;
   isEvent: boolean;
+  sources: Set<string>;
+  languages: Set<string>;
+  /** Live groups carrying a non-English marker, against the total seen. */
+  foreignGroups: number;
+  totalGroups: number;
 }
 
 function blank(key: string, title: string, href: string): Accumulator {
@@ -69,6 +74,10 @@ function blank(key: string, title: string, href: string): Accumulator {
     formats: new Map(),
     optional: new Map(),
     isEvent: false,
+    sources: new Set(),
+    languages: new Set(),
+    foreignGroups: 0,
+    totalGroups: 0,
   };
 }
 
@@ -107,6 +116,7 @@ export function aggregate(
       acc.hrefs.add(listing.href);
       acc.theaters.add(day.theater.name);
       acc.dates.add(day.date);
+      acc.sources.add(day.sourceId ?? 'fandango');
 
       for (const group of live) {
         const format = groupFormat(group);
@@ -119,6 +129,18 @@ export function aggregate(
             acc.isEvent = true;
           }
         }
+        // A film counts as foreign only when *every* showing is non-English.
+        // Spider-Man has one Spanish-dubbed screening among dozens; that makes
+        // it a dub of an English film, not a foreign release.
+        acc.totalGroups++;
+        let foreignHere = false;
+        for (const amenity of group.amenities) {
+          const language = foreignLanguageOf(amenity);
+          if (language === null) continue;
+          foreignHere = true;
+          if (language) acc.languages.add(language);
+        }
+        if (foreignHere) acc.foreignGroups++;
       }
     }
   }
@@ -188,7 +210,11 @@ function mergeAccumulators(
     for (const d of acc.dates) target.dates.add(d);
     for (const [label, set] of acc.formats) for (const t of set) addTo(target.formats, label, t);
     for (const [label, set] of acc.optional) for (const t of set) addTo(target.optional, label, t);
+    for (const source of acc.sources) target.sources.add(source);
+    for (const language of acc.languages) target.languages.add(language);
     target.isEvent ||= acc.isEvent;
+    target.foreignGroups += acc.foreignGroups;
+    target.totalGroups += acc.totalGroups;
   }
 
   const byDistance = (a: string, b: string): number =>
@@ -203,6 +229,9 @@ function mergeAccumulators(
     formats: new Map([...acc.formats].map(([k, v]) => [k, [...v].sort(byDistance)])),
     optional: new Map([...acc.optional].map(([k, v]) => [k, [...v].sort(byDistance)])),
     isEvent: acc.isEvent,
+    sources: [...acc.sources].sort(),
+    languages: acc.foreignGroups === acc.totalGroups ? [...acc.languages].sort() : [],
+    foreign: acc.totalGroups > 0 && acc.foreignGroups === acc.totalGroups,
     mergedHrefs: [...acc.hrefs].sort(),
   }));
 }

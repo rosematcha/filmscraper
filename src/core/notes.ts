@@ -180,6 +180,14 @@ export function buildNotes(
     }
   }
 
+  // --- language -----------------------------------------------------------
+  // Worth stating plainly: a Telugu release with English subtitles is a very
+  // different night out from the multiplex default.
+  if (movie.foreign) {
+    if (movie.languages.length > 0) clauses.push(`in ${humanList([...movie.languages])}`);
+    else clauses.push('not in English');
+  }
+
   // --- scarcity: dates and venues -----------------------------------------
   const limitedVenues = movie.theaters.length <= NAMED_THEATER_LIMIT;
   const venueList = humanList(movie.theaters.map(short));

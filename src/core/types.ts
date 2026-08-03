@@ -98,6 +98,12 @@ export interface AggregatedMovie {
   readonly optional: ReadonlyMap<string, readonly string[]>;
   /** True when any group carried a special-event marker (e.g. Fathom Features). */
   readonly isEvent: boolean;
+  /** Source ids that listed this film, e.g. `fandango`, `sapl`. */
+  readonly sources: readonly string[];
+  /** Original languages Fandango named, e.g. `["Telugu"]`. May be empty. */
+  readonly languages: readonly string[];
+  /** True when the release is not originally in English. */
+  readonly foreign: boolean;
   /** Every Fandango movie href folded into this entry, including merged variants. */
   readonly mergedHrefs: readonly string[];
 }

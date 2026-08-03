@@ -143,3 +143,24 @@ export function classifyAmenity(amenity: Amenity): ClassifiedAmenity {
 export function knownAmenityIds(): ReadonlySet<number> {
   return new Set(ID_RULES.keys());
 }
+
+/**
+ * The original language of a release, when the amenity implies one.
+ *
+ * Fandango tags these directly — `Arabic Language`, `Japanese Language`,
+ * `Korean Language` — which is how Bollywood, anime and other non-English
+ * programming can be told apart from the rest of the listings. `English Dubbed`
+ * and `English Subtitles` mark a foreign original whose language is unnamed,
+ * so they report an empty string rather than null.
+ */
+export function foreignLanguageOf(amenity: Amenity): string | null {
+  const name = amenity.name.trim();
+  if (/^english\s+(dubbed|subtitles?)$/i.test(name)) return '';
+
+  const named = /^(.+?)\s+(language|dubbed|subtitled|subtitles)$/i.exec(name);
+  // "Telugu with English Subtitles" names one language; the subtitle track is
+  // presentation detail, not a second language to list.
+  const language = named?.[1]?.replace(/\s+with\s+english$/i, '').trim();
+  if (!language || /^english$/i.test(language)) return null;
+  return language;
+}
