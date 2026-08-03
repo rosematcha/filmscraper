@@ -46,7 +46,7 @@ export class SlabSource implements Source {
     if (first === undefined || last === undefined) return { days: [], warnings: [] };
 
     request.onProgress?.({
-      message: `${this.calendar.label} · reading calendar`,
+      message: 'reading calendar',
       step: 1,
       total: request.dates.length,
     });

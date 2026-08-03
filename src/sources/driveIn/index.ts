@@ -49,7 +49,7 @@ export class DriveInSource implements Source {
     if (first === undefined || last === undefined) return { days: [], warnings: [] };
 
     request.onProgress?.({
-      message: `${this.venue.name} · reading calendar feed`,
+      message: 'reading calendar feed',
       step: 1,
       total: request.dates.length,
     });

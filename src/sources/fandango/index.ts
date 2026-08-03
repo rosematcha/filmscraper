@@ -19,8 +19,13 @@ export class FandangoSource implements Source {
       concurrency: this.concurrency,
       ...(request.onProgress
         ? {
-            onProgress: (message: string, step: number, total: number): void => {
-              request.onProgress?.({ message, step, total });
+            onProgress: (
+              message: string,
+              step: number,
+              total: number,
+              active: readonly string[],
+            ): void => {
+              request.onProgress?.({ message, step, total, active });
             },
           }
         : {}),

@@ -18,8 +18,13 @@ const MAX_PAGES = 12;
 const AMENITY_GROUP = '.js-amenity-btn[data-amenity-group]';
 const MORE_BUTTON = 'button.js-page-btn, button.pagination__more-btn';
 
-/** Emits a progress line for the day at `step` of `total`. */
-export type HarvestProgress = (message: string, step: number, total: number) => void;
+/** Emits a progress line, plus whatever is in flight right now. */
+export type HarvestProgress = (
+  message: string,
+  step: number,
+  total: number,
+  active: readonly string[],
+) => void;
 
 export type PageDecision = 'continue' | 'exhausted' | 'past-radius';
 
@@ -75,22 +80,17 @@ async function harvestSeedDate(
   zip: string,
   date: IsoDate,
   radiusMiles: number,
-  step: number,
-  total: number,
-  onProgress: HarvestProgress,
+  report: (message: string) => void,
 ): Promise<{ days: VenueDay[]; warnings: ScrapeWarning[] }> {
   const days: VenueDay[] = [];
   const warnings: ScrapeWarning[] = [];
   const seenTheaters = new Set<string>();
   const page = await session.newPage();
-  const report = (message: string): void => {
-    onProgress(message, step, total);
-  };
 
   try {
     // Announced before the request, not after: a page takes ~15s and silence
     // reads as a hung app.
-    report(`Fandango · ${date} · loading`);
+    report(`${date} · loading`);
     await session.throttle();
     await gotoWithRetry(page, `${SITE}/${zip}_movietimes?date=${date}`);
     await page
@@ -98,7 +98,7 @@ async function harvestSeedDate(
       .catch(() => undefined);
 
     for (let pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
-      report(`Fandango · ${date} · page ${pageNo} · reading showtimes`);
+      report(`${date} · page ${pageNo} · reading showtimes`);
       await exhaustLazyLoad(page);
       const html = await page.content();
       const parsed = parseShowtimesPage(html, date);
@@ -122,7 +122,7 @@ async function harvestSeedDate(
       const furthest = Math.max(...distances);
       if (fresh.length > 0) {
         report(
-          `Fandango · ${date} · ${zip} · page ${pageNo} · ${fresh.length} theaters (${nearest.toFixed(2)}–${furthest.toFixed(2)} mi)`,
+          `${date} · ${zip} · page ${pageNo} · ${fresh.length} theaters (${nearest.toFixed(2)}–${furthest.toFixed(2)} mi)`,
         );
       }
 
@@ -190,9 +190,19 @@ export async function harvestFandango(
   const onProgress = options.onProgress ?? ((): void => undefined);
   const days: VenueDay[] = [];
   const warnings: ScrapeWarning[] = [];
-  const total = options.dates.length;
   const firstDate = options.dates[0];
   if (firstDate === undefined) return { days, warnings };
+
+  // Work is counted in seed-days for the whole run. The seed count is not known
+  // until discovery finishes, so the estimate starts at one seed and grows;
+  // reporting two different totals across the two passes made the counter
+  // appear to reset partway through.
+  let completed = 0;
+  let estimate = options.dates.length;
+  const active = new Set<string>();
+  const report = (message: string): void => {
+    onProgress(message, completed, estimate, [...active]);
+  };
 
   // --- pass 1: work out which ZIP seeds are needed --------------------------
   // Fandango returns at most 20 theaters per ZIP however wide the radius, so a
@@ -206,10 +216,17 @@ export async function harvestFandango(
     options.zip,
     firstDate,
     options.radiusMiles,
-    1,
-    total,
-    onProgress,
-  );
+    report,
+  ).catch((error: unknown) => ({
+    days: [] as VenueDay[],
+    warnings: [
+      {
+        kind: 'page-error' as const,
+        message: `Fandango failed for ${firstDate} (${error instanceof Error ? error.message : String(error)}); theater discovery may be incomplete.`,
+      },
+    ],
+  }));
+  completed++;
   seedDays.set(options.zip, first.days);
   warnings.push(...first.warnings);
 
@@ -223,16 +240,16 @@ export async function harvestFandango(
     for (const seed of candidates) {
       visited.add(seed);
       seeds.push(seed);
-      onProgress(`Fandango · expanding search to ${seed}`, 1, total);
+      estimate = seeds.length * options.dates.length;
+      report(`expanding search to ${seed}`);
       const extra = await harvestSeedDate(
         session,
         seed,
         firstDate,
         options.radiusMiles,
-        1,
-        total,
-        onProgress,
-      );
+        report,
+      ).catch(() => ({ days: [] as VenueDay[], warnings: [] }));
+      completed++;
       seedDays.set(seed, extra.days);
       discovered += extra.days.filter((d) => !originHrefs.has(d.theater.href)).length;
     }
@@ -257,25 +274,31 @@ export async function harvestFandango(
     .filter((date) => date !== firstDate)
     .flatMap((date) => seeds.map((seed) => ({ seed, date })));
 
+  estimate = completed + jobs.length;
   const limit = clampConcurrency(options.concurrency);
-  let done = 0;
   const outcomes = await pool(jobs, limit, async (job) => {
-    const result = await harvestSeedDate(
-      session,
-      job.seed,
-      job.date,
-      options.radiusMiles,
-      // Progress counts finished pages rather than the calendar day, which is
-      // the only meaningful measure once several days are in flight at once.
-      done,
-      jobs.length,
-      (message) => {
-        onProgress(message, done, jobs.length);
-      },
-    );
-    done++;
-    onProgress(`Fandango · ${job.date} · done`, done, jobs.length);
-    return result;
+    active.add(job.date);
+    report(`${job.date} · loading`);
+    try {
+      return await harvestSeedDate(session, job.seed, job.date, options.radiusMiles, report);
+    } catch (error) {
+      // One unreachable date must not cost the whole source. Before this, a
+      // single failed page load rejected the pool, the pipeline caught it at
+      // source level, and Fandango returned nothing at all.
+      return {
+        days: [] as VenueDay[],
+        warnings: [
+          {
+            kind: 'page-error' as const,
+            message: `Fandango failed for ${job.date} (${error instanceof Error ? error.message : String(error)}); that date is missing.`,
+          },
+        ],
+      };
+    } finally {
+      active.delete(job.date);
+      completed++;
+      report(`${job.date} · done`);
+    }
   });
 
   for (const result of outcomes) {

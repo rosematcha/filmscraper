@@ -99,7 +99,7 @@ export class SaplSource implements Source {
       }
       done++;
       request.onProgress?.({
-        message: `San Antonio Public Library · ${date}`,
+        message: date,
         step: done,
         total: request.dates.length,
       });
