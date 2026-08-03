@@ -4,10 +4,34 @@ import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { filmFromSaplEvent } from './extract.js';
 
+/** Run `items` through `worker`, `limit` at a time, keeping input order. */
+async function mapWithLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      for (;;) {
+        const index = next++;
+        const item = items[index];
+        if (item === undefined) return;
+        results[index] = await worker(item);
+      }
+    }),
+  );
+  return results;
+}
+
 const FEED = 'https://www.trumba.com/calendars/san-antonio-public-library.json';
 
 /** Trumba caps a response at 200 events; a single day is far below that. */
 const DAY_WINDOW = 1;
+
+/** Days fetched at once. The feed is small and on a different host to Fandango. */
+const DAY_CONCURRENCY = 4;
 
 interface TrumbaField {
   readonly label?: unknown;
@@ -58,24 +82,35 @@ export class SaplSource implements Source {
     const warnings: SourceResult['warnings'] = [];
     let considered = 0;
     let skipped = 0;
+    let done = 0;
 
-    for (const [index, date] of request.dates.entries()) {
-      request.onProgress?.({
-        message: `San Antonio Public Library · ${date}`,
-        step: index + 1,
-        total: request.dates.length,
-      });
-
-      let events: TrumbaEvent[];
+    // One request per day, several at a time: the whole week lands in about the
+    // time a single serial pass used to take.
+    const perDay = await mapWithLimit(request.dates, DAY_CONCURRENCY, async (date) => {
+      let events: TrumbaEvent[] = [];
+      let failure: string | null = null;
       try {
         const url = `${FEED}?startdate=${date.replace(/-/g, '')}&days=${String(DAY_WINDOW)}`;
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP ${String(response.status)}`);
         events = (await response.json()) as TrumbaEvent[];
       } catch (error) {
+        failure = error instanceof Error ? error.message : String(error);
+      }
+      done++;
+      request.onProgress?.({
+        message: `San Antonio Public Library · ${date}`,
+        step: done,
+        total: request.dates.length,
+      });
+      return { date, events, failure };
+    });
+
+    for (const { date, events, failure } of perDay) {
+      if (failure !== null) {
         warnings.push({
           kind: 'page-error',
-          message: `Library calendar failed for ${date} (${error instanceof Error ? error.message : String(error)}).`,
+          message: `Library calendar failed for ${date} (${failure}).`,
         });
         continue;
       }

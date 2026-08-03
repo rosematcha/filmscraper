@@ -166,6 +166,31 @@ function collectTheaters(days: readonly VenueDay[]): Theater[] {
   return [...byName.values()].sort((a, b) => a.miles - b.miles || a.name.localeCompare(b.name));
 }
 
+/**
+ * Merge several sources' progress into one counter.
+ *
+ * Each source counts its own work, so with them running together the raw
+ * numbers would jump around. This sums the latest reading from each into a
+ * single "N of M" that only ever moves forward.
+ */
+export function combineProgress(
+  sourceIds: readonly string[],
+  onProgress: ProgressFn | undefined,
+): (sourceId: string) => ProgressFn | undefined {
+  if (!onProgress) return () => undefined;
+  const state = new Map(sourceIds.map((id) => [id, { step: 0, total: 0 }]));
+  return (sourceId) => (update) => {
+    state.set(sourceId, { step: update.step, total: update.total });
+    let step = 0;
+    let total = 0;
+    for (const entry of state.values()) {
+      step += entry.step;
+      total += entry.total;
+    }
+    onProgress({ message: update.message, step, total });
+  };
+}
+
 export interface PipelineOptions {
   readonly aliases: AliasConfig;
   readonly keepYears: boolean;
@@ -184,13 +209,33 @@ export async function runPipeline(
   const days: VenueDay[] = [];
   const warnings: ScrapeWarning[] = [];
 
-  for (const source of sources) {
-    const result = await source.harvest({
-      zip: request.zip,
-      dates,
-      radiusMiles: request.radiusMiles,
-      ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-    });
+  // Sources hit unrelated hosts, so they run together: the whole scrape costs
+  // the slowest source rather than the sum of all of them.
+  const progress = combineProgress(sources.map((s) => s.id), options.onProgress);
+  const results = await Promise.all(
+    sources.map((source) =>
+      source
+        .harvest({
+          zip: request.zip,
+          dates,
+          radiusMiles: request.radiusMiles,
+          ...(() => {
+            const fn = progress(source.id);
+            return fn ? { onProgress: fn } : {};
+          })(),
+        })
+        .catch((error: unknown) => ({
+          days: [],
+          warnings: [
+            {
+              kind: 'page-error' as const,
+              message: `${source.id} failed: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+        })),
+    ),
+  );
+  for (const result of results) {
     days.push(...result.days);
     warnings.push(...result.warnings);
   }
