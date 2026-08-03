@@ -1,0 +1,24 @@
+{
+  "$comment": "Manual overrides layered on top of the automatic variant merge. Edit freely; the file is read at runtime and never rewritten.",
+
+  "$comment_merge": "Force these Fandango movie ids to fold into one entry. Each array is one group; the first id supplies the canonical link.",
+  "merge": [],
+
+  "$comment_split": "Block an automatic merge. Each array lists ids that must stay separate even when their titles normalize identically.",
+  "split": [],
+
+  "$comment_theaterNames": "Short display names for the Notes column. Keys match the theater name Fandango renders, case-insensitively.",
+  "theaterNames": {
+    "Santikos Palladium IMAX": "Palladium",
+    "AMC Rivercenter 11 with Alamo IMAX": "Rivercenter",
+    "Regal Live Oak & RPX": "Regal Live Oak",
+    "Regal Cielo Vista & RPX": "Regal Cielo Vista",
+    "Regal Huebner Oaks & RPX": "Huebner Oaks",
+    "Regal Alamo Quarry": "Alamo Quarry",
+    "Alamo Drafthouse Park North": "Alamo Park North",
+    "Alamo Drafthouse Stone Oak": "Alamo Stone Oak",
+    "Flix Brewhouse San Antonio": "Flix Brewhouse",
+    "Santikos Entertainment Westlakes": "Santikos Westlakes",
+    "City Base Entertainment": "City Base"
+  }
+}
