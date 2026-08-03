@@ -10,6 +10,7 @@ export default tseslint.config(
       'coverage/**',
       'scratch/**',
       '*.config.js',
+      'web/vite.config.ts',
     ],
   },
   ...tseslint.configs.strictTypeChecked,

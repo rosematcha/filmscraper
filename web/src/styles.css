@@ -1,0 +1,262 @@
+/*
+ * Deliberately close to unstyled. The table is the product; everything here
+ * exists to keep the movie titles the most interesting thing on screen.
+ */
+
+:root {
+  /* Neutrals tinted warm so nothing reads as pure grey. */
+  --paper: oklch(99% 0.004 85);
+  --ink: oklch(24% 0.008 85);
+  --muted: oklch(52% 0.007 85);
+  --faint: oklch(72% 0.006 85);
+  --rule: oklch(91% 0.005 85);
+  --field: oklch(97% 0.005 85);
+  --link: oklch(46% 0.088 250);
+
+  --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: oklch(19% 0.006 85);
+    --ink: oklch(92% 0.006 85);
+    --muted: oklch(66% 0.008 85);
+    --faint: oklch(46% 0.007 85);
+    --rule: oklch(29% 0.006 85);
+    --field: oklch(23% 0.006 85);
+    --link: oklch(76% 0.085 250);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 6rem;
+}
+
+h1 {
+  margin: 0 0 2rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+/* --- controls: one line of settings, not a form to fill out --- */
+
+form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+input[type='text'],
+input[type='date'],
+input[type='number'] {
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.35rem 0.5rem;
+}
+
+input[type='text'] {
+  width: 6rem;
+}
+input[type='number'] {
+  width: 5rem;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+button {
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--paper);
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.toggles {
+  display: flex;
+  gap: 1rem;
+  flex-basis: 100%;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.toggles label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* --- status --- */
+
+.status {
+  margin: 1.25rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.7;
+  color: var(--faint);
+  white-space: pre-wrap;
+}
+
+.error {
+  color: oklch(52% 0.17 27);
+}
+
+@media (prefers-color-scheme: dark) {
+  .error {
+    color: oklch(74% 0.15 27);
+  }
+}
+
+.warning {
+  margin: 1.5rem 0 0;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--rule);
+  font-size: 0.8125rem;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+/* --- results --- */
+
+.summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 2.5rem 0 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.summary button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--link);
+  font-size: 0.75rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.summary .group {
+  display: flex;
+  gap: 1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  padding: 0.5rem 1rem 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+td {
+  padding: 0.6rem 1rem 0.6rem 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: baseline;
+}
+
+td:last-child,
+th:last-child {
+  padding-right: 0;
+}
+
+.title {
+  width: 40%;
+}
+
+.title a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.title a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.notes {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.reach {
+  width: 7rem;
+  color: var(--faint);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+pre {
+  margin: 0.75rem 0 0;
+  padding: 1rem;
+  background: var(--field);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+.empty {
+  margin: 2.5rem 0 0;
+  color: var(--muted);
+  max-width: 62ch;
+}
