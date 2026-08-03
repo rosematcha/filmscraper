@@ -8,13 +8,19 @@ export interface SectionOptions {
   readonly separateDriveIn: boolean;
   /** Give library screenings their own table, and ignore the radius for them. */
   readonly separateLibrary: boolean;
+  /** Split revivals, mystery nights and event broadcasts into their own table. */
+  readonly separateEvents: boolean;
   readonly foreign: ForeignMode;
+  /** Year the run is measured against; injected so tests stay stable. */
+  readonly currentYear: number;
 }
 
 export const DEFAULT_SECTION_OPTIONS: SectionOptions = {
   separateDriveIn: true,
   separateLibrary: true,
+  separateEvents: false,
   foreign: 'inline',
+  currentYear: new Date().getFullYear(),
 };
 
 export const DRIVE_IN_SOURCE = 'stars-and-stripes';
@@ -25,6 +31,39 @@ export interface MovieSection {
   /** Markdown heading, omitted for the main table. */
   readonly heading: string | null;
   readonly movies: readonly AggregatedMovie[];
+}
+
+/**
+ * Titles that announce a one-off booking rather than a run.
+ * Mystery and secret screenings carry no amenity marker at all.
+ */
+const EVENT_TITLE =
+  /\b(mystery|secret|anniversary|encore|fest\b|meet-?up|unseen|marathon|double\s+feature|sing-?along|q\s*(&|and)\s*a|fan\s+event|in\s+concert|live\s+in\s+cinemas?)\b/i;
+
+/**
+ * A film at least this many years old, playing a short run, is a revival
+ * rather than a late leg of its original release.
+ */
+const REVIVAL_AGE_YEARS = 2;
+const REVIVAL_MAX_DATES = 2;
+
+/**
+ * Whether this is a special screening rather than a film in release.
+ *
+ * The strongest signal turns out to be the year: Fandango appends `(2026)` to
+ * everything in current release and omits it entirely on catalogue titles, so
+ * "Paddington 2" and "The Untouchables" announce themselves. Amenity markers
+ * cover Fathom, Q&A and concert broadcasts, and the title pattern catches
+ * mystery nights, which carry no marker of any kind.
+ */
+export function isSpecialEvent(movie: AggregatedMovie, currentYear: number): boolean {
+  if (movie.isEvent) return true;
+  if (EVENT_TITLE.test(movie.title)) return true;
+  if (movie.releaseYear === null) return true;
+  return (
+    currentYear - movie.releaseYear >= REVIVAL_AGE_YEARS &&
+    movie.dates.length <= REVIVAL_MAX_DATES
+  );
 }
 
 /** True when this source listed the film at all. */
@@ -64,6 +103,7 @@ export function buildSections(
   const driveIn: AggregatedMovie[] = [];
   const library: AggregatedMovie[] = [];
   const foreign: AggregatedMovie[] = [];
+  const events: AggregatedMovie[] = [];
 
   for (const movie of movies) {
     if (movie.foreign && options.foreign === 'exclude') continue;
@@ -82,12 +122,19 @@ export function buildSections(
       foreign.push(movie);
       continue;
     }
+    if (options.separateEvents && isSpecialEvent(movie, options.currentYear)) {
+      events.push(movie);
+      continue;
+    }
     main.push(movie);
   }
 
   const sections: MovieSection[] = [{ id: 'main', heading: null, movies: main }];
   if (foreign.length > 0) {
     sections.push({ id: 'foreign', heading: 'Not in English', movies: foreign });
+  }
+  if (events.length > 0) {
+    sections.push({ id: 'events', heading: 'Special screenings and events', movies: events });
   }
   if (driveIn.length > 0) {
     sections.push({ id: 'drive-in', heading: 'Stars & Stripes Drive-In', movies: driveIn });
