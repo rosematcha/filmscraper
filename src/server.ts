@@ -109,12 +109,6 @@ app.post('/api/scrape', async (c) => {
       // Only Fandango needs Playwright; feed-only runs skip the browser.
       if (needsBrowser(sources)) await session.open();
       const aliases = await loadAliases();
-      await send('progress', {
-        message: `${request.zip} · ${request.from} → ${request.to} · ${String(request.radiusMiles)} mi`,
-        step: 0,
-        total: 0,
-      });
-
       // Writes are chained rather than awaited inline: the pipeline's callback
       // is synchronous, and buffering these until the run finished was why the
       // UI sat silent for the whole scrape.

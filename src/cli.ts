@@ -127,8 +127,13 @@ const log = (message: string): void => {
   if (!options.quiet) console.error(message);
 };
 
-const progress = ({ message, step, total }: ProgressUpdate): void => {
-  log(`[${String(step)}/${String(total)}] ${message}`);
+const sourceLabel = new Map(SOURCES.map((s) => [s.id, s.label]));
+
+const progress = ({ sourceId, message, step, total, done }: ProgressUpdate): void => {
+  if (done) return; // the final line each source prints is enough
+  const label = sourceLabel.get(sourceId) ?? sourceId;
+  const count = total > 0 ? ` ${String(step)}/${String(total)}` : '';
+  log(`[${label}${count}] ${message}`);
 };
 
 const unknown = options.sources.filter((id) => !SOURCES.some((s) => s.id === id));
