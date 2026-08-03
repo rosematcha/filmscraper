@@ -10,6 +10,14 @@ export interface SectionOptions {
   readonly separateLibrary: boolean;
   /** Split revivals, mystery nights and event broadcasts into their own table. */
   readonly separateEvents: boolean;
+  /**
+   * List open-caption screenings in their own table.
+   *
+   * Unlike the other splits this one duplicates: a film shown with open
+   * captions at one venue still belongs in the main table for its ordinary
+   * screenings.
+   */
+  readonly separateOpenCaptions: boolean;
   readonly foreign: ForeignMode;
   /** Year the run is measured against; injected so tests stay stable. */
   readonly currentYear: number;
@@ -18,10 +26,38 @@ export interface SectionOptions {
 export const DEFAULT_SECTION_OPTIONS: SectionOptions = {
   separateDriveIn: true,
   separateLibrary: true,
-  separateEvents: false,
-  foreign: 'inline',
+  separateEvents: true,
+  separateOpenCaptions: false,
+  foreign: 'separate',
   currentYear: new Date().getFullYear(),
 };
+
+/** Amenity label the accessibility classifier assigns to open-caption groups. */
+export const OPEN_CAPTION_LABEL = 'Open caption';
+
+export function hasOpenCaptions(movie: AggregatedMovie): boolean {
+  return (movie.optional.get(OPEN_CAPTION_LABEL) ?? []).length > 0;
+}
+
+/**
+ * The open-caption booking as its own entry.
+ *
+ * All poodles are dogs: the captioned screenings are a subset of the film's
+ * run, so the row is narrowed to the venues and dates that actually carry
+ * captions. Reusing the whole film would claim twenty theaters when only two
+ * show it captioned. Formats are dropped rather than inherited, since an IMAX
+ * booking elsewhere says nothing about the captioned one.
+ */
+export function openCaptionEntry(movie: AggregatedMovie): AggregatedMovie {
+  return {
+    ...movie,
+    theaters: movie.optional.get(OPEN_CAPTION_LABEL) ?? [],
+    dates: movie.optionalDates.get(OPEN_CAPTION_LABEL) ?? [],
+    formats: new Map(),
+    optional: new Map(),
+    optionalDates: new Map(),
+  };
+}
 
 export const DRIVE_IN_SOURCE = 'stars-and-stripes';
 export const LIBRARY_SOURCE = 'sapl';
@@ -104,6 +140,7 @@ export function buildSections(
   const library: AggregatedMovie[] = [];
   const foreign: AggregatedMovie[] = [];
   const events: AggregatedMovie[] = [];
+  const openCaptions: AggregatedMovie[] = [];
 
   for (const movie of movies) {
     if (movie.foreign && options.foreign === 'exclude') continue;
@@ -113,6 +150,9 @@ export function buildSections(
     // appears in both tables rather than being pulled out of the main one.
     if (options.separateDriveIn && playsAt(movie, DRIVE_IN_SOURCE)) driveIn.push(movie);
     if (options.separateLibrary && playsAt(movie, LIBRARY_SOURCE)) library.push(movie);
+    if (options.separateOpenCaptions && hasOpenCaptions(movie)) {
+      openCaptions.push(openCaptionEntry(movie));
+    }
 
     // Films exclusive to a broken-out venue have no business in the main table.
     if (options.separateDriveIn && onlyFrom(movie, DRIVE_IN_SOURCE)) continue;
@@ -141,6 +181,9 @@ export function buildSections(
   }
   if (library.length > 0) {
     sections.push({ id: 'library', heading: 'San Antonio Public Library', movies: library });
+  }
+  if (openCaptions.length > 0) {
+    sections.push({ id: 'open-captions', heading: 'Open caption screenings', movies: openCaptions });
   }
   return sections;
 }
