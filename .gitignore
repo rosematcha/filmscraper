@@ -1,0 +1,9 @@
+node_modules/
+dist/
+web/dist/
+.cache/
+coverage/
+*.log
+.DS_Store
+scratch/
+out/
