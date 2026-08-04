@@ -1,9 +1,7 @@
 import type { Coords } from '../../core/geo.js';
 import { DiskCache } from '../../net/cache.js';
+import { browserHeaders } from '../../net/headers.js';
 export { zipCentroid } from '../../net/geocode.js';
-
-const UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 const theaterCache = new DiskCache('theater-geo');
 
@@ -34,7 +32,7 @@ export async function theaterCoords(href: string): Promise<Coords | null> {
   return theaterCache.wrap(href, async () => {
     try {
       const response = await fetch(`https://www.fandango.com${href}`, {
-        headers: { 'User-Agent': UA },
+        headers: browserHeaders(),
         redirect: 'follow',
       });
       if (!response.ok) return null;

@@ -1,8 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
-
-/** A current desktop Chrome UA; Fandango serves the mobile layout to anything else. */
-const USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+/** Fandango serves the mobile layout to anything that is not a desktop Chrome UA. */
+import { BROWSER_USER_AGENT } from './headers.js';
 
 export interface BrowserOptions {
   /** Minimum gap between navigations, in ms. */
@@ -33,7 +31,7 @@ export class BrowserSession {
   async open(): Promise<void> {
     this.browser = await chromium.launch({ headless: this.options.headless });
     this.context = await this.browser.newContext({
-      userAgent: USER_AGENT,
+      userAgent: BROWSER_USER_AGENT,
       viewport: { width: 1440, height: 1400 },
       locale: 'en-US',
       timezoneId: this.options.timezone,

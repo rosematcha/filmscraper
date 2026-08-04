@@ -1,6 +1,7 @@
 import { icalDate, icalTime, parseIcal } from '../../core/ical.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
+import { browserHeaders } from '../../net/headers.js';
 
 export interface DriveInVenue {
   readonly id: string;
@@ -56,8 +57,11 @@ export class DriveInSource implements Source {
 
     let text: string;
     try {
-      const response = await fetch(this.venue.icalUrl, { redirect: 'follow' });
-      if (!response.ok) throw new Error(`HTTP ${String(response.status)}`);
+      const response = await fetch(this.venue.icalUrl, {
+        headers: browserHeaders('text/calendar,text/html;q=0.9,*/*;q=0.8'),
+        redirect: 'follow',
+      });
+      if (!response.ok) throw new Error(`HTTP ${String(response.status)} ${response.statusText}`.trim());
       text = await response.text();
     } catch (error) {
       return {

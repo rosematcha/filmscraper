@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { icalDate, icalTime, parseIcal } from '../src/core/ical.js';
 import { mergeKey } from '../src/core/titles.js';
 import { filmFromSaplEvent, filmFromLineup, isCancelled } from '../src/sources/sapl/extract.js';
 import { filmFromSlabTitle, parseSlabEvents } from '../src/sources/slab/parse.js';
+import { DriveInSource } from '../src/sources/driveIn/index.js';
+import type { SourceRequest } from '../src/sources/source.js';
 
 describe('Slab title extraction', () => {
   it('reads a clean arthouse title', () => {
@@ -247,5 +249,34 @@ describe('title selection across sources', () => {
     // Fandango hrefs stay site-relative until the renderer prefixes them.
     expect(out[0]?.href).toBe('/spider-man-brand-new-day-2026-243819/movie-overview');
     expect(out[0]?.theaters).toHaveLength(4);
+  });
+});
+
+describe('Drive-in calendar feed', () => {
+  const request: SourceRequest = { zip: '78205', dates: ['2026-08-03'], radiusMiles: 35 };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('identifies itself as a browser, since the feed is behind a bot filter', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('BEGIN:VCALENDAR\nEND:VCALENDAR'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new DriveInSource().harvest(request);
+
+    const init = fetchMock.mock.calls[0]?.[1] as { headers: Record<string, string> };
+    expect(init.headers['User-Agent']).toMatch(/Chrome\//);
+    expect(init.headers['Accept']).toContain('text/calendar');
+  });
+
+  it('reports the status code when the feed is blocked', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('denied', { status: 403 })));
+
+    const result = await new DriveInSource().harvest(request);
+
+    expect(result.days).toEqual([]);
+    expect(result.warnings[0]?.kind).toBe('page-error');
+    expect(result.warnings[0]?.message).toContain('403');
   });
 });
