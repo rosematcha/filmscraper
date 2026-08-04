@@ -129,6 +129,10 @@ export default function App(): React.JSX.Element {
   }, []);
 
   const invalidRange = to < from;
+  // Without the API there is no miles field to set, so the dataset's own radius
+  // is the only honest filter — a stale default would silently drop venues the
+  // header claims are covered.
+  const effectiveRadius = liveAvailable ? radius : (dataset?.radiusMiles ?? radius);
   const noSources = sources.length > 0 && chosen.length === 0;
 
   const run = useCallback(
@@ -221,7 +225,7 @@ export default function App(): React.JSX.Element {
         dataset,
         from,
         to,
-        radius,
+        effectiveRadius,
         { keepYears, showAccessibility: false, showLanguage: false },
         {
           ...DEFAULT_SECTION_OPTIONS,
@@ -241,7 +245,7 @@ export default function App(): React.JSX.Element {
     dataset,
     from,
     to,
-    radius,
+    effectiveRadius,
     keepYears,
     separateDriveIn,
     separateLibrary,
@@ -320,21 +324,23 @@ export default function App(): React.JSX.Element {
       </h1>
 
       <form onSubmit={run}>
-        <label>
-          ZIP
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="\d{5}"
-            value={zip}
-            onChange={(e) => {
-              setZip(e.target.value);
-            }}
-            // The nightly dataset covers one ZIP; only a live run can change it.
-            readOnly={!liveAvailable}
-            required
-          />
-        </label>
+        {/* The nightly dataset covers one ZIP at one radius; without a live run
+            neither field can do anything, so the deployed site omits both. */}
+        {liveAvailable && (
+          <label>
+            ZIP
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="\d{5}"
+              value={zip}
+              onChange={(e) => {
+                setZip(e.target.value);
+              }}
+              required
+            />
+          </label>
+        )}
         <label>
           From
           <input
@@ -360,25 +366,26 @@ export default function App(): React.JSX.Element {
             required
           />
         </label>
-        <label>
-          Miles
-          <input
-            type="number"
-            min={1}
-            // Filtering below the scraped radius is free; above it there is no data.
-            max={dataset && !liveAvailable ? dataset.radiusMiles : 100}
-            step={1}
-            value={radius}
-            onChange={(e) => {
-              setRadius(Number(e.target.value));
-            }}
-            required
-          />
-        </label>
         {liveAvailable && (
-          <button type="submit" disabled={running || invalidRange || noSources}>
-            {running ? 'Scraping…' : 'Scrape'}
-          </button>
+          <>
+            <label>
+              Miles
+              <input
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                value={radius}
+                onChange={(e) => {
+                  setRadius(Number(e.target.value));
+                }}
+                required
+              />
+            </label>
+            <button type="submit" disabled={running || invalidRange || noSources}>
+              {running ? 'Scraping…' : 'Scrape'}
+            </button>
+          </>
         )}
 
         <button
@@ -477,6 +484,9 @@ export default function App(): React.JSX.Element {
               </div>
             </div>
 
+            {/* Both only bite on a live scrape: the published dataset is already
+                title-normalized and fetched. */}
+            {liveAvailable && (
             <div className="optgroup">
               <span className="optgroup__title">Other</span>
               <div className="optgroup__items">
@@ -505,6 +515,7 @@ export default function App(): React.JSX.Element {
                 </label>
               </div>
             </div>
+            )}
           </div>
         )}
       </form>
@@ -553,7 +564,9 @@ export default function App(): React.JSX.Element {
 
       {error !== null && <p className="status error">{error}</p>}
 
-      {dataset && Object.keys(dataset.sources).length > 0 && (
+      {/* Source freshness and scrape caveats are operator detail: useful while
+          running the scraper locally, noise for a reader of the listings. */}
+      {liveAvailable && dataset && Object.keys(dataset.sources).length > 0 && (
         <div className="status freshness">
           {Object.entries(dataset.sources)
             .sort(([a], [b]) => a.localeCompare(b))
@@ -567,15 +580,17 @@ export default function App(): React.JSX.Element {
         </div>
       )}
 
-      {view?.warnings.map((warning) => (
-        <p className="warning" key={warning.kind + warning.message}>
-          {warning.message}
-        </p>
-      ))}
+      {liveAvailable &&
+        view?.warnings.map((warning) => (
+          <p className="warning" key={warning.kind + warning.message}>
+            {warning.message}
+          </p>
+        ))}
 
       {view?.rows.length === 0 && !running && (
         <p className="empty">
-          Nothing playing in that window within {radius} miles of {zip}.
+          Nothing playing in that window within {effectiveRadius} miles of{' '}
+          {liveAvailable ? zip : (dataset?.zip ?? zip)}.
         </p>
       )}
 
