@@ -69,6 +69,24 @@ export async function trueMiles(
   return haversineMiles(origin, venue);
 }
 
+/**
+ * Distance from the origin plus the venue's own coordinates.
+ *
+ * Coordinates are looked up even when Fandango's own mileage is trustworthy,
+ * because re-measuring against a different anchor later needs a point, not a
+ * distance. The lookups are cached forever — theaters do not move.
+ */
+export async function locate(
+  theater: Theater,
+  originZip: string,
+  foundViaOrigin: boolean,
+): Promise<{ miles: number; coords: Coords | null }> {
+  const [origin, venue] = await Promise.all([zipCentroid(originZip), theaterCoords(theater.href)]);
+  const miles =
+    foundViaOrigin || !origin || !venue ? theater.miles : haversineMiles(origin, venue);
+  return { miles, coords: venue };
+}
+
 /** Coordinate lookups issued at once; they hit a different host to the scrape. */
 const GEO_CONCURRENCY = 8;
 
@@ -90,7 +108,7 @@ export async function normalizeDistances(
   }
 
   const entries = [...unique.entries()];
-  const miles = new Map<string, number>();
+  const located = new Map<string, { miles: number; coords: Coords | null }>();
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(GEO_CONCURRENCY, entries.length) }, async () => {
@@ -99,15 +117,22 @@ export async function normalizeDistances(
         const entry = entries[index];
         if (entry === undefined) return;
         const [href, theater] = entry;
-        miles.set(href, await trueMiles(theater, originZip, originSeedHrefs.has(href)));
+        located.set(href, await locate(theater, originZip, originSeedHrefs.has(href)));
       }
     }),
   );
 
-  return days.map((day) => ({
-    ...day,
-    theater: { ...day.theater, miles: miles.get(day.theater.href) ?? day.theater.miles },
-  }));
+  return days.map((day) => {
+    const fix = located.get(day.theater.href);
+    return {
+      ...day,
+      theater: {
+        ...day.theater,
+        miles: fix?.miles ?? day.theater.miles,
+        ...(fix?.coords ? { coords: fix.coords } : {}),
+      },
+    };
+  });
 }
 
 export type { Coords };

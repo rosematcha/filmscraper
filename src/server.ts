@@ -3,13 +3,17 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { streamSSE } from 'hono/streaming';
+import { resolveChain } from './core/chains.js';
 import { loadAliases } from './core/config.js';
+import { paddedRadius } from './core/filters.js';
 import { renderMarkdown, renderRows } from './core/markdown.js';
 import { shortenTheater } from './core/notes.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
 import { unfilteredSources, type ForeignMode, type SectionOptions } from './core/sections.js';
 import type { RenderOptions, ScrapeRequest } from './core/types.js';
+import type { Coords } from './core/geo.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
+import { geocodeAddress, zipCentroid } from './net/geocode.js';
 import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
 
 const PORT = Number(process.env['PORT'] ?? 8787);
@@ -31,6 +35,8 @@ interface ScrapeBody {
   separateEvents?: unknown;
   separateOpenCaptions?: unknown;
   foreign?: unknown;
+  excludeChains?: unknown;
+  anchor?: unknown;
 }
 
 interface ParsedBody {
@@ -39,6 +45,9 @@ interface ParsedBody {
   sources: string[];
   concurrency: number;
   sections: SectionOptions;
+  excludedChains: Set<string>;
+  /** Free-text address to measure from; resolved once the request is accepted. */
+  anchor: string | null;
 }
 
 function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
@@ -64,9 +73,20 @@ function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
   const foreign: ForeignMode =
     body.foreign === 'inline' || body.foreign === 'exclude' ? body.foreign : 'separate';
 
+  const excludedChains = new Set(
+    (Array.isArray(body.excludeChains) ? body.excludeChains : [])
+      .filter((id): id is string => typeof id === 'string')
+      .map((id) => resolveChain(id))
+      .filter((id): id is string => id !== null),
+  );
+
+  const anchor = typeof body.anchor === 'string' && body.anchor.trim() !== '' ? body.anchor.trim() : null;
+
   return {
     sources,
     concurrency,
+    excludedChains,
+    anchor,
     sections: {
       separateDriveIn: body.separateDriveIn !== false,
       separateLibrary: body.separateLibrary !== false,
@@ -101,7 +121,7 @@ app.post('/api/scrape', async (c) => {
   const parsed = parseBody(await c.req.json<ScrapeBody>().catch(() => ({})));
   if ('error' in parsed) return c.json({ error: parsed.error }, 400);
 
-  const { request, options, sources, concurrency, sections } = parsed;
+  const { request, options, sources, concurrency, sections, excludedChains, anchor } = parsed;
   return streamSSE(c, async (stream) => {
     const session = new BrowserSession({ ...DEFAULT_BROWSER_OPTIONS, timezone: TIMEZONE });
     const send = async (event: string, data: unknown): Promise<void> => {
@@ -111,6 +131,23 @@ app.post('/api/scrape', async (c) => {
     try {
       // Only Fandango needs Playwright; feed-only runs skip the browser.
       if (needsBrowser(sources)) await session.open();
+      // An address that cannot be located would silently fall back to the ZIP,
+      // so it is reported rather than absorbed.
+      let anchorPoint: Coords | null = null;
+      if (anchor !== null) {
+        anchorPoint = await geocodeAddress(anchor);
+        if (!anchorPoint) {
+          await send('failed', { message: `Could not locate "${anchor}".` });
+          return;
+        }
+      }
+      // Sources search outward from the ZIP, so an off-centre anchor needs a
+      // wider sweep than the radius it will finally be filtered to.
+      const searchRadiusMiles = paddedRadius(
+        request.radiusMiles,
+        anchorPoint,
+        anchorPoint ? await zipCentroid(request.zip) : null,
+      );
       const aliases = await loadAliases();
       // Writes are chained rather than awaited inline: the pipeline's callback
       // is synchronous, and buffering these until the run finished was why the
@@ -121,6 +158,9 @@ app.post('/api/scrape', async (c) => {
         keepYears: options.keepYears,
         timezone: TIMEZONE,
         unfilteredSources: unfilteredSources(sections),
+        excludedChains,
+        anchor: anchorPoint,
+        searchRadiusMiles,
         onProgress: (update) => {
           writes = writes.then(() => send('progress', update));
         },

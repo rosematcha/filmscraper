@@ -1,3 +1,5 @@
+import type { Coords } from './geo.js';
+
 /** An ISO calendar date, `YYYY-MM-DD`. */
 export type IsoDate = string;
 
@@ -47,6 +49,13 @@ export interface Theater {
   readonly miles: number;
   /** Street address as listed, used to derive extra search seeds. */
   readonly address?: string;
+  /**
+   * Where the venue actually is.
+   *
+   * Carried so distance can be re-measured against any anchor after the fact —
+   * `miles` only answers "how far from the ZIP the scrape ran on".
+   */
+  readonly coords?: Coords;
 }
 
 /** Everything one venue is showing on one date. */

@@ -25,6 +25,9 @@ export interface ScrapeParams {
   separateEvents: boolean;
   separateOpenCaptions: boolean;
   foreign: 'inline' | 'separate' | 'exclude';
+  excludeChains: string[];
+  /** Free-text address; the server geocodes it and measures the radius from it. */
+  anchor: string | null;
 }
 
 export interface ResultRow {

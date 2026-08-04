@@ -1,4 +1,6 @@
 import { aggregate, isLive, type AliasConfig } from './aggregate.js';
+import { applyVenueFilter } from './filters.js';
+import type { Coords } from './geo.js';
 import { dateRange } from './notes.js';
 import type {
   IsoDate,
@@ -191,6 +193,18 @@ export interface PipelineOptions {
   readonly onProgress?: ProgressFn;
   /** Sources exempt from the radius filter because they get their own table. */
   readonly unfilteredSources?: ReadonlySet<string>;
+  /** Chains to drop from the results, from `chains.ts`. */
+  readonly excludedChains?: ReadonlySet<string>;
+  /** Measure the radius from here rather than from the ZIP's centroid. */
+  readonly anchor?: Coords | null;
+  /**
+   * Radius the sources search, when it has to exceed the requested one.
+   *
+   * An anchor off to one side of the ZIP is only fully covered by a wider
+   * search; the extra venues that turns up are dropped by the radius filter
+   * unless they are genuinely close to the anchor.
+   */
+  readonly searchRadiusMiles?: number;
 }
 
 export async function runPipeline(
@@ -221,7 +235,7 @@ export async function runPipeline(
         .harvest({
           zip: request.zip,
           dates,
-          radiusMiles: request.radiusMiles,
+          radiusMiles: options.searchRadiusMiles ?? request.radiusMiles,
           ...(tagged ? { onProgress: tagged } : {}),
         })
         .then(finish)
@@ -257,10 +271,12 @@ export async function runPipeline(
 
   // Venues broken out into their own table are wanted by name, so distance
   // stops being a reason to drop them.
-  const exempt = options.unfilteredSources ?? new Set<string>();
-  const inRange = days.filter(
-    (d) => d.theater.miles <= request.radiusMiles || exempt.has(d.sourceId ?? 'fandango'),
-  );
+  const inRange = applyVenueFilter(days, {
+    excludedChains: options.excludedChains ?? new Set<string>(),
+    anchor: options.anchor ?? null,
+    radiusMiles: request.radiusMiles,
+    exemptSources: options.unfilteredSources ?? new Set<string>(),
+  });
 
   const theaters = collectTheaters(inRange);
   const movies = aggregate(inRange, theaters, {

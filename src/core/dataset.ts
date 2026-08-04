@@ -1,3 +1,4 @@
+import { applyVenueFilter, type VenueFilter } from './filters.js';
 import type { IsoDate, ScrapeWarning, VenueDay } from './types.js';
 
 /** Version stamp so a stale file cannot be misread by a newer site build. */
@@ -131,15 +132,12 @@ export function mergeDataset(
 
 export function filterDataset(
   dataset: Dataset,
-  radiusMiles: number,
   from: IsoDate,
   to: IsoDate,
-  exemptSources: ReadonlySet<string>,
+  filter: VenueFilter,
 ): VenueDay[] {
-  return dataset.days.filter(
-    (day) =>
-      day.date >= from &&
-      day.date <= to &&
-      (day.theater.miles <= radiusMiles || exemptSources.has(day.sourceId ?? 'fandango')),
+  return applyVenueFilter(
+    dataset.days.filter((day) => day.date >= from && day.date <= to),
+    filter,
   );
 }

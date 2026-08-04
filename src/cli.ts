@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import { writeFile } from 'node:fs/promises';
 import { Command, InvalidArgumentError } from 'commander';
+import { chainIds, resolveChain } from './core/chains.js';
 import { loadAliases } from './core/config.js';
+import { paddedRadius } from './core/filters.js';
 import { renderMarkdown, renderWarnings } from './core/markdown.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
 import { unfilteredSources, type ForeignMode, type SectionOptions } from './core/sections.js';
 import type { ProgressUpdate, RenderOptions, ScrapeRequest } from './core/types.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
+import { geocodeAddress, zipCentroid } from './net/geocode.js';
 import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -50,6 +53,8 @@ interface CliOptions {
   separateEvents: boolean;
   separateOpenCaptions: boolean;
   foreign: ForeignMode;
+  excludeChains: string[];
+  anchor?: string;
 }
 
 const program = new Command()
@@ -94,6 +99,24 @@ const program = new Command()
       return value;
     },
     'separate',
+  )
+  .option(
+    '-x, --exclude-chains <chains>',
+    `drop these chains (${chainIds().join(', ')})`,
+    (value: string) => {
+      const ids = value.split(',').map((v) => v.trim()).filter(Boolean);
+      const resolved = ids.map((id) => {
+        const chain = resolveChain(id);
+        if (chain === null) throw new InvalidArgumentError(`unknown chain: ${id}`);
+        return chain;
+      });
+      return resolved;
+    },
+    [],
+  )
+  .option(
+    '-a, --anchor <address>',
+    'measure the radius from this address instead of the ZIP centroid',
   )
   .option('--headed', 'run the browser headed, for debugging', false)
   .option('-q, --quiet', 'suppress progress output', false);
@@ -156,13 +179,25 @@ const session = new BrowserSession({
 });
 const wantsBrowser = needsBrowser(options.sources);
 
+// Resolved before the scrape so a typo'd address fails in a second rather than
+// after a minute of page loads.
+const anchor = options.anchor ? await geocodeAddress(options.anchor) : null;
+if (options.anchor && !anchor) {
+  console.error(`could not locate --anchor "${options.anchor}"`);
+  process.exit(1);
+}
+// Sources search outward from the ZIP, so an off-centre anchor needs a wider
+// sweep than the radius it will finally be filtered to.
+const searchRadiusMiles = paddedRadius(options.radius, anchor, await zipCentroid(options.zip));
+
 try {
   // Only Fandango needs Playwright; a feeds-only run should not pay for it.
   if (wantsBrowser) await session.open();
   const aliases = await loadAliases();
   log(
-    `Scraping ${request.zip} · ${from}${to === from ? '' : ` → ${to}`} · ${request.radiusMiles} mi · ` +
-      options.sources.join(', '),
+    `Scraping ${request.zip} · ${from}${to === from ? '' : ` → ${to}`} · ${request.radiusMiles} mi ` +
+      `from ${options.anchor ?? request.zip} · ${options.sources.join(', ')}` +
+      (options.excludeChains.length > 0 ? ` · without ${options.excludeChains.join(', ')}` : ''),
   );
 
   const result = await runPipeline(
@@ -174,6 +209,9 @@ try {
       timezone: options.timezone,
       onProgress: progress,
       unfilteredSources: unfilteredSources(sectionOptions),
+      excludedChains: new Set(options.excludeChains),
+      anchor,
+      searchRadiusMiles,
     },
   );
 

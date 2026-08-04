@@ -7,6 +7,9 @@ import {
   type SourceInfo,
 } from './api';
 import { ALIASES, loadDataset, renderDataset, type Dataset } from './dataset';
+import { geocodeAnchor } from './geocode';
+import { chainIds, chainLabel } from '@core/core/chains.js';
+import type { Coords } from '@core/core/geo.js';
 import { DEFAULT_SECTION_OPTIONS } from '@core/core/sections.js';
 import { describeSchedule } from '@core/core/schedule.js';
 
@@ -92,6 +95,10 @@ export default function App(): React.JSX.Element {
   const [to, setTo] = useState(addDays(start, DEFAULT_WINDOW_DAYS - 1));
   const [radius, setRadius] = useState(15);
   const [keepYears, setKeepYears] = useState(false);
+  const [excludedChains, setExcludedChains] = useState<string[]>([]);
+  const [anchorText, setAnchorText] = useState('');
+  const [anchor, setAnchor] = useState<Coords | null>(null);
+  const [anchorState, setAnchorState] = useState<'idle' | 'looking' | 'failed'>('idle');
 
   const [sources, setSources] = useState<SourceInfo[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
@@ -104,6 +111,8 @@ export default function App(): React.JSX.Element {
   const [showOptions, setShowOptions] = useState(false);
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [liveAvailable, setLiveAvailable] = useState(false);
+  const [sourcesLoaded, setSourcesLoaded] = useState(false);
+  const seededRadius = useRef(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Map<string, ProgressUpdate>>(new Map());
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +126,7 @@ export default function App(): React.JSX.Element {
       setSources(list);
       setChosen(list.filter((s) => s.enabledByDefault).map((s) => s.id));
       setLiveAvailable(list.length > 0);
+      setSourcesLoaded(true);
     });
     // The deployed site has no API at all; it reads the nightly scrape instead.
     void loadDataset().then((d) => {
@@ -128,11 +138,45 @@ export default function App(): React.JSX.Element {
     });
   }, []);
 
+  // Without a live scrape the radius can only narrow what the nightly run
+  // covered, so the dataset's own reach is the honest starting point.
+  useEffect(() => {
+    if (!sourcesLoaded || !dataset || liveAvailable || seededRadius.current) return;
+    seededRadius.current = true;
+    setRadius(dataset.radiusMiles);
+  }, [sourcesLoaded, dataset, liveAvailable]);
+
+  // Anchors are resolved in the browser: the deployed site has no server, and
+  // the debounce keeps a typed address from firing a lookup per keystroke.
+  useEffect(() => {
+    const query = anchorText.trim();
+    if (query === '') {
+      setAnchor(null);
+      setAnchorState('idle');
+      return;
+    }
+    let live = true;
+    setAnchorState('looking');
+    const timer = setTimeout(() => {
+      void geocodeAnchor(query).then((coords) => {
+        if (!live) return;
+        setAnchor(coords);
+        setAnchorState(coords ? 'idle' : 'failed');
+      });
+    }, 500);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [anchorText]);
+
   const invalidRange = to < from;
-  // Without the API there is no miles field to set, so the dataset's own radius
-  // is the only honest filter — a stale default would silently drop venues the
-  // header claims are covered.
-  const effectiveRadius = liveAvailable ? radius : (dataset?.radiusMiles ?? radius);
+  // The site may filter below the scraped radius, never above it: beyond that
+  // line there is simply no data, and the wider number would promise coverage
+  // the dataset does not have.
+  const effectiveRadius = liveAvailable
+    ? radius
+    : Math.min(radius, dataset?.radiusMiles ?? radius);
   const noSources = sources.length > 0 && chosen.length === 0;
 
   const run = useCallback(
@@ -170,6 +214,8 @@ export default function App(): React.JSX.Element {
           separateEvents,
           separateOpenCaptions,
           foreign,
+          excludeChains: excludedChains,
+          anchor: anchorText.trim() === '' ? null : anchorText.trim(),
         },
         {
           onProgress: (update) => {
@@ -215,6 +261,8 @@ export default function App(): React.JSX.Element {
       separateEvents,
       separateOpenCaptions,
       foreign,
+      excludedChains,
+      anchorText,
     ],
   );
 
@@ -225,7 +273,7 @@ export default function App(): React.JSX.Element {
         dataset,
         from,
         to,
-        effectiveRadius,
+        { radiusMiles: effectiveRadius, excludedChains: new Set(excludedChains), anchor },
         { keepYears, showAccessibility: false, showLanguage: false },
         {
           ...DEFAULT_SECTION_OPTIONS,
@@ -252,6 +300,8 @@ export default function App(): React.JSX.Element {
     separateEvents,
     separateOpenCaptions,
     foreign,
+    excludedChains,
+    anchor,
   ]);
 
   /** The nightly dataset when there is one; otherwise whatever a live run returned. */
@@ -366,26 +416,37 @@ export default function App(): React.JSX.Element {
             required
           />
         </label>
+        <label>
+          Miles
+          <input
+            type="number"
+            min={1}
+            max={liveAvailable ? 100 : (dataset?.radiusMiles ?? 100)}
+            step={1}
+            value={radius}
+            onChange={(e) => {
+              setRadius(Number(e.target.value));
+            }}
+            required
+          />
+        </label>
+        {/* Distance is measured from here rather than from the ZIP centroid,
+            which is what makes "within 15 miles of my house" answerable. */}
+        <label className="anchor">
+          Of
+          <input
+            type="text"
+            placeholder={dataset?.zip ?? zip}
+            value={anchorText}
+            onChange={(e) => {
+              setAnchorText(e.target.value);
+            }}
+          />
+        </label>
         {liveAvailable && (
-          <>
-            <label>
-              Miles
-              <input
-                type="number"
-                min={1}
-                max={100}
-                step={1}
-                value={radius}
-                onChange={(e) => {
-                  setRadius(Number(e.target.value));
-                }}
-                required
-              />
-            </label>
-            <button type="submit" disabled={running || invalidRange || noSources}>
-              {running ? 'Scraping…' : 'Scrape'}
-            </button>
-          </>
+          <button type="submit" disabled={running || invalidRange || noSources}>
+            {running ? 'Scraping…' : 'Scrape'}
+          </button>
         )}
 
         <button
@@ -424,6 +485,26 @@ export default function App(): React.JSX.Element {
               </div>
             </div>
             )}
+
+            <div className="optgroup">
+              <span className="optgroup__title">Chains</span>
+              <div className="optgroup__items">
+                {chainIds().map((id) => (
+                  <label key={id}>
+                    <input
+                      type="checkbox"
+                      checked={!excludedChains.includes(id)}
+                      onChange={(e) => {
+                        setExcludedChains((prev) =>
+                          e.target.checked ? prev.filter((x) => x !== id) : [...prev, id],
+                        );
+                      }}
+                    />
+                    {chainLabel(id)}
+                  </label>
+                ))}
+              </div>
+            </div>
 
             <div className="optgroup">
               <span className="optgroup__title">Tables</span>
@@ -520,6 +601,22 @@ export default function App(): React.JSX.Element {
         )}
       </form>
 
+      {anchorState === 'looking' && <p className="status">Locating {anchorText.trim()}…</p>}
+      {anchorState === 'failed' && (
+        <p className="status error">
+          Could not find “{anchorText.trim()}”. Distances are still measured from{' '}
+          {dataset?.zip ?? zip}.
+        </p>
+      )}
+      {/* Venues scraped before coordinates were stored cannot be re-measured,
+          so their mileage still refers to the ZIP. */}
+      {anchor && (fromDataset?.unanchored.length ?? 0) > 0 && (
+        <p className="status">
+          Measured from the ZIP, not the anchor:{' '}
+          {(fromDataset?.unanchored ?? []).join(', ')}.
+        </p>
+      )}
+
       {invalidRange && <p className="status error">“To” is before “from”.</p>}
       {noSources && <p className="status error">Pick at least one source.</p>}
 
@@ -590,7 +687,7 @@ export default function App(): React.JSX.Element {
       {view?.rows.length === 0 && !running && (
         <p className="empty">
           Nothing playing in that window within {effectiveRadius} miles of{' '}
-          {liveAvailable ? zip : (dataset?.zip ?? zip)}.
+          {anchor ? anchorText.trim() : liveAvailable ? zip : (dataset?.zip ?? zip)}.
         </p>
       )}
 

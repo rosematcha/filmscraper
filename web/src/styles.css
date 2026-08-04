@@ -95,6 +95,11 @@ input[type='text'] {
 input[type='number'] {
   width: 5rem;
 }
+/* An address needs the room a ZIP does not. */
+.anchor input[type='text'] {
+  width: 16rem;
+  max-width: 100%;
+}
 
 input:focus-visible,
 button:focus-visible {

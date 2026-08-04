@@ -1,5 +1,7 @@
 import { aggregate, type AliasConfig } from '@core/core/aggregate.js';
 import { filterDataset, isDataset, type Dataset } from '@core/core/dataset.js';
+import { unanchoredVenues } from '@core/core/filters.js';
+import type { Coords } from '@core/core/geo.js';
 import { renderMarkdown, renderRows, type SortedMovie } from '@core/core/markdown.js';
 import { shortenTheater } from '@core/core/notes.js';
 import { unfilteredSources, type SectionOptions } from '@core/core/sections.js';
@@ -38,6 +40,18 @@ export interface RenderedDataset {
   markdown: string;
   theaters: Theater[];
   movieCount: number;
+  /**
+   * Venues the anchor could not re-measure, because the scrape that produced
+   * the dataset predates stored coordinates. Their distance is still relative
+   * to the ZIP, and saying so beats a silently wrong mile count.
+   */
+  unanchored: string[];
+}
+
+export interface DatasetFilters {
+  radiusMiles: number;
+  excludedChains: ReadonlySet<string>;
+  anchor: Coords | null;
 }
 
 /**
@@ -50,12 +64,17 @@ export function renderDataset(
   dataset: Dataset,
   from: string,
   to: string,
-  radiusMiles: number,
+  filters: DatasetFilters,
   options: RenderOptions,
   sections: SectionOptions,
   aliases: AliasConfig,
 ): RenderedDataset {
-  const days = filterDataset(dataset, radiusMiles, from, to, unfilteredSources(sections));
+  const days = filterDataset(dataset, from, to, {
+    radiusMiles: filters.radiusMiles,
+    excludedChains: filters.excludedChains,
+    anchor: filters.anchor,
+    exemptSources: unfilteredSources(sections),
+  });
   const theaters = [...new Map(days.map((d) => [d.theater.name, d.theater])).values()].sort(
     (a, b) => a.miles - b.miles || a.name.localeCompare(b.name),
   );
@@ -66,7 +85,7 @@ export function renderDataset(
 
   const movies = aggregate(days, theaters, { aliases, keepYears: options.keepYears });
   const result: ScrapeResult = {
-    request: { zip: dataset.zip, from, to, radiusMiles },
+    request: { zip: dataset.zip, from, to, radiusMiles: filters.radiusMiles },
     dates,
     // The scrape's own boundaries still apply: a date the multiplexes had not
     // posted when the job ran is unknown, not empty.
@@ -83,6 +102,7 @@ export function renderDataset(
     markdown: renderMarkdown(result, options, aliases.theaterNames, sections),
     theaters,
     movieCount: new Set(movies.map((m) => m.title)).size,
+    unanchored: unanchoredVenues(days, filters.anchor),
   };
 }
 
