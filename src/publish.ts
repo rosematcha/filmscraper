@@ -170,6 +170,12 @@ try {
     new Date(),
   );
 
+  // A blocked or broken source is only a warning in the dataset, so without
+  // this the run stays green and the log says nothing about it.
+  for (const warning of result.warnings) {
+    log(`[warning: ${warning.kind}] ${warning.message}`);
+  }
+
   await mkdir(dirname(options.out), { recursive: true });
   await writeFile(options.out, JSON.stringify(dataset), 'utf8');
 
