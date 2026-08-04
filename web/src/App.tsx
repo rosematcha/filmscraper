@@ -36,6 +36,20 @@ function sinceLabel(iso: string): string {
   return `${String(days)}d ago`;
 }
 
+/**
+ * The market the scrape is centred on.
+ *
+ * Downtown's ZIP is what the scraper searches from, but nobody thinks of where
+ * they live as five digits — the city is the honest way to say it. Any other
+ * ZIP is a live run somewhere else and gets shown as itself.
+ */
+const HOME_ZIP = '78205';
+const HOME_PLACE = 'San Antonio';
+
+function placeName(zip: string): string {
+  return zip === HOME_ZIP ? HOME_PLACE : zip;
+}
+
 /** A week spans a full theatrical program change, so it is the useful default. */
 const DEFAULT_WINDOW_DAYS = 7;
 
@@ -357,21 +371,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <main>
-      <h1>
-        filmscraper
-        {dataset && (
-          <span className="stamp">
-            {' · '}
-            {new Date(dataset.generatedAt).toLocaleString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
-            {` · ${dataset.zip} · to ${String(dataset.radiusMiles)} mi`}
-          </span>
-        )}
-      </h1>
+      <h1>filmscraper</h1>
 
       <form onSubmit={run}>
         {/* The nightly dataset covers one ZIP at one radius; without a live run
@@ -436,7 +436,7 @@ export default function App(): React.JSX.Element {
           Of
           <input
             type="text"
-            placeholder={dataset?.zip ?? zip}
+            placeholder={placeName(dataset?.zip ?? zip)}
             value={anchorText}
             onChange={(e) => {
               setAnchorText(e.target.value);
@@ -605,7 +605,7 @@ export default function App(): React.JSX.Element {
       {anchorState === 'failed' && (
         <p className="status error">
           Could not find “{anchorText.trim()}”. Distances are still measured from{' '}
-          {dataset?.zip ?? zip}.
+          {placeName(dataset?.zip ?? zip)}.
         </p>
       )}
       {/* Venues scraped before coordinates were stored cannot be re-measured,
@@ -687,7 +687,7 @@ export default function App(): React.JSX.Element {
       {view?.rows.length === 0 && !running && (
         <p className="empty">
           Nothing playing in that window within {effectiveRadius} miles of{' '}
-          {anchor ? anchorText.trim() : liveAvailable ? zip : (dataset?.zip ?? zip)}.
+          {anchor ? anchorText.trim() : placeName(liveAvailable ? zip : (dataset?.zip ?? zip))}.
         </p>
       )}
 

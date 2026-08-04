@@ -1,10 +1,12 @@
-import type { Theater } from './types.js';
+import type { VenueDay } from './types.js';
 
 /**
- * A cinema chain, identified from the theater name a source reports.
+ * A cinema chain or venue operator, as the filter offers it.
  *
- * Names are the only stable handle: Fandango has no operator field, and the
- * independent sources report a venue name and nothing else.
+ * Multiplexes are identified from the theater name — Fandango has no operator
+ * field — while the independent venues are identified from the source that
+ * produced them, because a library screening is named after its branch and a
+ * drive-in after itself.
  */
 export interface Chain {
   readonly id: string;
@@ -20,7 +22,7 @@ export interface Chain {
  *
  * The short display names from `config/aliases.json` are matched too — Notes
  * calls the Quarry "Alamo Quarry" and the Palladium just "Palladium", and a
- * classifier that only knew the long form would file both as independent.
+ * classifier that only knew the long form would file both as unknown.
  */
 export const CHAINS: readonly Chain[] = [
   { id: 'amc', label: 'AMC', pattern: /^amc\b|\brivercenter\b/ },
@@ -30,30 +32,46 @@ export const CHAINS: readonly Chain[] = [
   { id: 'flix', label: 'Flix Brewhouse', pattern: /\bflix\b/ },
   { id: 'santikos', label: 'Santikos', pattern: /\bsantikos\b|\bpalladium\b/ },
   { id: 'evo', label: 'EVO Entertainment', pattern: /\bevo\b/ },
-  // Local operators. Slab runs both the free outdoor screenings and the paid
-  // arthouse at Blue Star, which the calendar names without saying "Slab".
   { id: 'city-base', label: 'City Base', pattern: /\bcity ?base\b/ },
+  // Slab runs both the free outdoor screenings and the paid arthouse at Blue
+  // Star, which the calendar names without saying "Slab".
   { id: 'slab', label: 'Slab Cinema', pattern: /\bslab\b|\barthouse at blue star\b/ },
+  { id: 'stars-and-stripes', label: 'Stars & Stripes Drive-In', pattern: /\bdrive-?in\b/ },
+  { id: 'library', label: 'San Antonio Public Library', pattern: /\blibrary\b/ },
 ];
 
-/** Everything the patterns do not claim: one-off venues, libraries, the drive-in. */
-export const INDEPENDENT_CHAIN = 'independent';
+/**
+ * Sources whose venues belong to one operator whatever they are called.
+ *
+ * The library posts screenings under twenty branch names and Slab under the
+ * name of whichever park it is in that week, so the source is the only
+ * reliable handle.
+ */
+const SOURCE_CHAINS: Readonly<Record<string, string>> = {
+  'stars-and-stripes': 'stars-and-stripes',
+  sapl: 'library',
+  'slab-arthouse': 'slab',
+  'slab-outdoor': 'slab',
+};
 
-export const INDEPENDENT_LABEL = 'Independent';
+/** Venues no rule claims. Not offered as a filter; nothing has landed here yet. */
+export const UNKNOWN_CHAIN = 'other';
 
+/** Every chain the filter offers, in display order. */
 export function chainIds(): string[] {
-  return [...CHAINS.map((c) => c.id), INDEPENDENT_CHAIN];
+  return CHAINS.map((c) => c.id);
 }
 
 export function chainLabel(id: string): string {
-  if (id === INDEPENDENT_CHAIN) return INDEPENDENT_LABEL;
   return CHAINS.find((c) => c.id === id)?.label ?? id;
 }
 
-/** The chain a venue belongs to, or `independent` when none claims it. */
-export function chainOf(theaterName: string): string {
+/** The operator behind a venue, from its source when known and its name otherwise. */
+export function chainOf(theaterName: string, sourceId?: string): string {
+  const fromSource = sourceId === undefined ? undefined : SOURCE_CHAINS[sourceId];
+  if (fromSource !== undefined) return fromSource;
   const name = theaterName.toLowerCase();
-  return CHAINS.find((chain) => chain.pattern.test(name))?.id ?? INDEPENDENT_CHAIN;
+  return CHAINS.find((chain) => chain.pattern.test(name))?.id ?? UNKNOWN_CHAIN;
 }
 
 /**
@@ -65,15 +83,14 @@ export function chainOf(theaterName: string): string {
 export function resolveChain(input: string): string | null {
   const value = input.trim().toLowerCase();
   if (value === '') return null;
-  if (value === INDEPENDENT_CHAIN) return INDEPENDENT_CHAIN;
   const match = CHAINS.find(
     (chain) => chain.id === value || chain.label.toLowerCase().startsWith(value),
   );
   return match?.id ?? null;
 }
 
-/** True when this venue survives the exclusion list. */
-export function keepsChain(theater: Theater, excluded: ReadonlySet<string>): boolean {
+/** True when this venue-day survives the exclusion list. */
+export function keepsChain(day: VenueDay, excluded: ReadonlySet<string>): boolean {
   if (excluded.size === 0) return true;
-  return !excluded.has(chainOf(theater.name));
+  return !excluded.has(chainOf(day.theater.name, day.sourceId));
 }

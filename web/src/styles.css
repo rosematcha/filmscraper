@@ -227,10 +227,6 @@ button:disabled {
   }
 }
 
-.stamp {
-  color: var(--faint);
-}
-
 /* Per-source freshness: the arthouse calendar can be six days older than the
    multiplex grid, and one timestamp for the lot would hide that. */
 .freshness {

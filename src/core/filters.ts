@@ -81,7 +81,7 @@ export function applyVenueFilter(
 ): VenueDay[] {
   const out: VenueDay[] = [];
   for (const day of days) {
-    if (!keepsChain(day.theater, filter.excludedChains)) continue;
+    if (!keepsChain(day, filter.excludedChains)) continue;
     const miles = milesFrom(day.theater, filter.anchor);
     const exempt = filter.exemptSources.has(day.sourceId ?? 'fandango');
     if (!exempt && miles > filter.radiusMiles) continue;

@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHAINS,
-  INDEPENDENT_CHAIN,
+  UNKNOWN_CHAIN,
   chainIds,
   chainLabel,
   chainOf,
   keepsChain,
   resolveChain,
 } from '../src/core/chains.js';
-import type { Theater } from '../src/core/types.js';
+import type { VenueDay } from '../src/core/types.js';
 
-const theater = (name: string): Theater => ({ name, href: '', miles: 1 });
+const venue = (name: string, sourceId = 'fandango'): VenueDay => ({
+  theater: { name, href: '', miles: 1 },
+  date: '2026-08-04',
+  movies: [],
+  sourceId,
+});
 
 describe('chainOf', () => {
   it('names the operator behind each San Antonio venue', () => {
@@ -31,7 +36,15 @@ describe('chainOf', () => {
   it('recognises the local operators', () => {
     expect(chainOf('City Base Entertainment')).toBe('city-base');
     expect(chainOf('Arthouse at Blue Star')).toBe('slab');
-    expect(chainOf('Slab Cinema')).toBe('slab');
+  });
+
+  it('takes the source over the name for the independent venues', () => {
+    // The library posts under branch names and Slab under park names, so the
+    // venue name alone would file them as unknown.
+    expect(chainOf('Bazan Branch Library', 'sapl')).toBe('library');
+    expect(chainOf('Travis Park', 'slab-outdoor')).toBe('slab');
+    expect(chainOf('Arthouse at Blue Star', 'slab-arthouse')).toBe('slab');
+    expect(chainOf('Stars & Stripes Drive-In', 'stars-and-stripes')).toBe('stars-and-stripes');
   });
 
   it('places the short display names Notes uses', () => {
@@ -42,9 +55,10 @@ describe('chainOf', () => {
     expect(chainOf('Palladium')).toBe('santikos');
   });
 
-  it('files unclaimed venues as independent', () => {
-    expect(chainOf('Stars & Stripes Drive-In')).toBe(INDEPENDENT_CHAIN);
-    expect(chainOf('San Antonio Central Library')).toBe(INDEPENDENT_CHAIN);
+  it('falls back to the name when the source says nothing', () => {
+    expect(chainOf('Stars & Stripes Drive-In')).toBe('stars-and-stripes');
+    expect(chainOf('San Antonio Central Library')).toBe('library');
+    expect(chainOf('Some New Microcinema')).toBe(UNKNOWN_CHAIN);
   });
 
   it('ignores case', () => {
@@ -57,7 +71,7 @@ describe('resolveChain', () => {
     expect(resolveChain('amc')).toBe('amc');
     expect(resolveChain('Alamo')).toBe('alamo-drafthouse');
     expect(resolveChain(' flix ')).toBe('flix');
-    expect(resolveChain('independent')).toBe(INDEPENDENT_CHAIN);
+    expect(resolveChain('San Antonio Public')).toBe('library');
   });
 
   it('rejects what it cannot place', () => {
@@ -68,23 +82,27 @@ describe('resolveChain', () => {
 
 describe('keepsChain', () => {
   it('keeps everything when nothing is excluded', () => {
-    expect(keepsChain(theater('AMC Rivercenter 11'), new Set())).toBe(true);
+    expect(keepsChain(venue('AMC Rivercenter 11'), new Set())).toBe(true);
   });
 
   it('drops only the excluded operator', () => {
     const excluded = new Set(['amc', 'regal']);
-    expect(keepsChain(theater('AMC Rivercenter 11'), excluded)).toBe(false);
-    expect(keepsChain(theater('Regal Alamo Quarry'), excluded)).toBe(false);
-    expect(keepsChain(theater('Santikos Galaxy'), excluded)).toBe(true);
+    expect(keepsChain(venue('AMC Rivercenter 11'), excluded)).toBe(false);
+    expect(keepsChain(venue('Regal Alamo Quarry'), excluded)).toBe(false);
+    expect(keepsChain(venue('Santikos Galaxy'), excluded)).toBe(true);
+  });
+
+  it('drops a library branch by its source', () => {
+    expect(keepsChain(venue('Bazan Branch Library', 'sapl'), new Set(['library']))).toBe(false);
   });
 });
 
 describe('chain listing', () => {
-  it('lists every chain plus independent, with labels', () => {
-    expect(chainIds()).toHaveLength(CHAINS.length + 1);
-    expect(chainIds()).toContain(INDEPENDENT_CHAIN);
+  it('offers every chain by name, and no catch-all bucket', () => {
+    expect(chainIds()).toEqual(CHAINS.map((c) => c.id));
+    expect(chainIds()).not.toContain(UNKNOWN_CHAIN);
     expect(chainLabel('alamo-drafthouse')).toBe('Alamo Drafthouse');
-    expect(chainLabel(INDEPENDENT_CHAIN)).toBe('Independent');
+    expect(chainLabel('stars-and-stripes')).toBe('Stars & Stripes Drive-In');
     expect(chainLabel('nope')).toBe('nope');
   });
 });
