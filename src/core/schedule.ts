@@ -36,6 +36,10 @@ export const SCHEDULES: Readonly<Record<string, readonly ScheduleRule[]>> = {
   // Wix calendars are published in batches and rarely change mid-week.
   'slab-arthouse': [{ days: [SUNDAY], hours: [18] }],
   'slab-outdoor': [{ days: [SUNDAY], hours: [18] }],
+  // Same outdoor season as Slab's Wix calendar; the venue page carries richer copy.
+  'mission-marquee': [{ days: [SUNDAY], hours: [18] }],
+  // Monthly cinema lineup; the season page changes rarely once published.
+  'tobin-cinema': [{ days: [SUNDAY], hours: [18] }],
   // Twice a week: the drive-in posts its week, the library its programme.
   'stars-and-stripes': [{ days: [SUNDAY, THURSDAY], hours: [18] }],
   sapl: [{ days: [SUNDAY, THURSDAY], hours: [18] }],

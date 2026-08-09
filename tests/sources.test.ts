@@ -3,6 +3,16 @@ import { icalDate, icalTime, parseIcal } from '../src/core/ical.js';
 import { mergeKey } from '../src/core/titles.js';
 import { filmFromSaplEvent, filmFromLineup, isCancelled } from '../src/sources/sapl/extract.js';
 import { filmFromSlabTitle, parseSlabEvents } from '../src/sources/slab/parse.js';
+import {
+  filmFromMarqueeTitle,
+  parseMarqueeDateTime,
+  parseMarqueeEvents,
+} from '../src/sources/missionMarquee/parse.js';
+import {
+  filmFromTobinTitle,
+  parseTobinCinemaEvents,
+  parseTobinDate,
+} from '../src/sources/tobinCenter/parse.js';
 import { DriveInSource } from '../src/sources/driveIn/index.js';
 import type { SourceRequest } from '../src/sources/source.js';
 
@@ -83,6 +93,72 @@ describe('parseSlabEvents', () => {
 
   it('returns nothing when the payload is absent', () => {
     expect(parseSlabEvents('<html></html>')).toEqual([]);
+  });
+});
+
+describe('Mission Marquee parsing', () => {
+  it('reads date and time from the venue display string', () => {
+    expect(parseMarqueeDateTime('8/15/2026 7:00 PM - 10:30 PM')).toEqual({
+      date: '2026-08-15',
+      time: '7:00p',
+    });
+    expect(parseMarqueeDateTime('11/21/2026 6:00 PM - 10:00 PM')).toEqual({
+      date: '2026-11-21',
+      time: '6:00p',
+    });
+  });
+
+  it('reads events out of the EasyDNNNews markup', () => {
+    const html = `<article class="edn_article edn_clearFix edn_eventsSimple">
+      <h2 class="edn_articleTitle"><!-- <a href="https://www.missionmarquee.com/EVENTS/Outdoor-Family-Film-Series/ArtMID/23946/ArticleID/25643/A-Minecraft-Movie">-->A Minecraft Movie<!-- </a> --></h2>
+      <time>8/15/2026 7:00 PM - 10:30 PM</time>
+    </article>
+    <article class="edn_article edn_clearFix edn_eventsSimple">
+      <h2 class="edn_articleTitle"><!-- <a href="https://www.missionmarquee.com/EVENTS/Outdoor-Family-Film-Series/ArtMID/23946/ArticleID/25650/Special-Feature-To-be-Announced">-->Special Feature To be Announced<!-- </a> --></h2>
+      <time>10/17/2026 6:00 PM - 10:00 PM</time>
+    </article>`;
+    const events = parseMarqueeEvents(html);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toEqual({
+      title: 'A Minecraft Movie',
+      url: 'https://www.missionmarquee.com/EVENTS/Outdoor-Family-Film-Series/ArtMID/23946/ArticleID/25643/A-Minecraft-Movie',
+      date: '2026-08-15',
+      time: '7:00p',
+    });
+  });
+
+  it('skips placeholders that name no film', () => {
+    expect(filmFromMarqueeTitle('Special Feature To be Announced')).toBeNull();
+    expect(filmFromMarqueeTitle('La Bamba')).toBe('La Bamba');
+  });
+});
+
+describe('Tobin Center cinema parsing', () => {
+  it('reads a date from the listing', () => {
+    expect(parseTobinDate('Sep 12, 2026')).toBe('2026-09-12');
+    expect(parseTobinDate('Dec 12, 2026')).toBe('2026-12-12');
+  });
+
+  it('reads cinema events out of the Drupal views markup', () => {
+    const html = `<div class="views-row"><div class="views-field views-field-title"><span class="field-content"><a href="/scottpilgrim" hreflang="en">Scott Pilgrim vs The World (2010) | H-E-B Cinema on Will’s Plaza</a></span></div><div class="views-field views-field-nothing"><span class="field-content">  Sep 12, 2026
+</span></div><div class="views-field views-field-field-show-venue"><div class="field-content">Will Naylor Smith River Walk Plaza</div></div></div>
+<div class="views-row"><div class="views-field views-field-title"><span class="field-content"><a href="/practicalmagic" hreflang="en">Practical Magic (1988) | H-E-B Cinema on Will’s Plaza</a></span></div><div class="views-field views-field-nothing"><span class="field-content">  Oct 10, 2026
+</span></div><div class="views-field views-field-field-show-venue"><div class="field-content">Will Naylor Smith River Walk Plaza</div></div></div>`;
+    const events = parseTobinCinemaEvents(html);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toEqual({
+      title: 'Scott Pilgrim vs The World (2010) | H-E-B Cinema on Will’s Plaza',
+      url: 'https://www.tobincenter.org/scottpilgrim',
+      date: '2026-09-12',
+      venueName: 'Will Naylor Smith River Walk Plaza',
+    });
+  });
+
+  it('strips the series suffix to get the film title', () => {
+    expect(
+      filmFromTobinTitle('Scott Pilgrim vs The World (2010) | H-E-B Cinema on Will’s Plaza'),
+    ).toBe('Scott Pilgrim vs The World (2010)');
+    expect(filmFromTobinTitle('Special Feature To be Announced')).toBeNull();
   });
 });
 

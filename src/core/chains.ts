@@ -35,9 +35,10 @@ export const CHAINS: readonly Chain[] = [
   { id: 'city-base', label: 'City Base', pattern: /\bcity ?base\b/ },
   // Slab runs both the free outdoor screenings and the paid arthouse at Blue
   // Star, which the calendar names without saying "Slab".
-  { id: 'slab', label: 'Slab Cinema', pattern: /\bslab\b|\barthouse at blue star\b/ },
+  { id: 'slab', label: 'Slab Cinema', pattern: /\bslab\b|\barthouse at blue star\b|\bmission marquee\b/ },
   { id: 'stars-and-stripes', label: 'Stars & Stripes Drive-In', pattern: /\bdrive-?in\b/ },
   { id: 'library', label: 'San Antonio Public Library', pattern: /\blibrary\b/ },
+  { id: 'tobin-center', label: 'Tobin Center', pattern: /\btobin\b|\bwill naylor smith\b/ },
 ];
 
 /**
@@ -52,6 +53,8 @@ const SOURCE_CHAINS: Readonly<Record<string, string>> = {
   sapl: 'library',
   'slab-arthouse': 'slab',
   'slab-outdoor': 'slab',
+  'mission-marquee': 'slab',
+  'tobin-cinema': 'tobin-center',
 };
 
 /** Venues no rule claims. Not offered as a filter; nothing has landed here yet. */

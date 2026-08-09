@@ -43,6 +43,8 @@ describe('chainOf', () => {
     // venue name alone would file them as unknown.
     expect(chainOf('Bazan Branch Library', 'sapl')).toBe('library');
     expect(chainOf('Travis Park', 'slab-outdoor')).toBe('slab');
+    expect(chainOf('Mission Marquee Plaza', 'mission-marquee')).toBe('slab');
+    expect(chainOf('Will Naylor Smith River Walk Plaza', 'tobin-cinema')).toBe('tobin-center');
     expect(chainOf('Arthouse at Blue Star', 'slab-arthouse')).toBe('slab');
     expect(chainOf('Stars & Stripes Drive-In', 'stars-and-stripes')).toBe('stars-and-stripes');
   });

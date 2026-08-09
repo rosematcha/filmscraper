@@ -21,6 +21,8 @@ const SOURCE_LABELS: Record<string, string> = {
   fandango: 'Fandango',
   'slab-arthouse': 'Slab Cinema Arthouse',
   'slab-outdoor': 'Slab Cinema (outdoor)',
+  'mission-marquee': 'Mission Marquee Plaza',
+  'tobin-cinema': 'Tobin Center Cinema',
   'stars-and-stripes': 'Stars & Stripes Drive-In',
   sapl: 'San Antonio Public Library',
 };
