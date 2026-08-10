@@ -12,6 +12,12 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# Signup, confirm and unsubscribe. Each function declares its /api/* path in
+# its own config export; custom function paths win over the SPA rewrite below,
+# so no /api redirect rule is needed.
+[functions]
+  directory = "netlify/functions"
+
 # A missing dataset must 404 rather than fall through to the SPA shell. Static
 # files are served before redirects, so this only fires when the file is absent
 # — which keeps "not published yet" distinguishable from "served you HTML".
