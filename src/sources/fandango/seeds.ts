@@ -52,21 +52,18 @@ export function seedBudget(): number {
 }
 
 /**
- * True distance from the search origin, in miles.
+ * Stable identity for a venue, independent of the date being listed.
  *
- * Fandango reports mileage relative to whichever ZIP page listed the theater,
- * so a venue found via a neighbouring seed carries the wrong number. Its own
- * page has coordinates; the origin ZIP has a centroid.
+ * Theater hrefs carry the date they were scraped for
+ * (`/amc-boerne-11-aaxyz/theater-page?date=2026-08-16`), so using the raw href
+ * as an identity makes every venue-day a different venue. That is what let one
+ * theater carry several distances at once: the same cinema measured 26.63 mi on
+ * the days its coordinates resolved and 9.74 mi — the figure a neighbouring
+ * seed ZIP reported — on the days they did not. The radius filter then kept
+ * part of a run and dropped the rest, which read as a one-day engagement.
  */
-export async function trueMiles(
-  theater: Theater,
-  originZip: string,
-  foundViaOrigin: boolean,
-): Promise<number> {
-  if (foundViaOrigin) return theater.miles;
-  const [origin, venue] = await Promise.all([zipCentroid(originZip), theaterCoords(theater.href)]);
-  if (!origin || !venue) return theater.miles;
-  return haversineMiles(origin, venue);
+export function venueKey(href: string): string {
+  return href.split('?')[0] ?? href;
 }
 
 /**
@@ -75,16 +72,26 @@ export async function trueMiles(
  * Coordinates are looked up even when Fandango's own mileage is trustworthy,
  * because re-measuring against a different anchor later needs a point, not a
  * distance. The lookups are cached forever — theaters do not move.
+ *
+ * `originMiles` is what the origin ZIP's own page said, when it listed this
+ * venue at all; that number is already relative to the right place. Otherwise
+ * the venue is measured from the origin centroid. The last resort — no
+ * coordinates and never seen from the origin — is the largest figure any seed
+ * reported: a venue missing from the origin's own list is further away than a
+ * neighbouring seed makes it look, so overstating is the safer error.
  */
 export async function locate(
   theater: Theater,
   originZip: string,
-  foundViaOrigin: boolean,
+  originMiles: number | undefined,
+  fallbackMiles: number,
 ): Promise<{ miles: number; coords: Coords | null }> {
-  const [origin, venue] = await Promise.all([zipCentroid(originZip), theaterCoords(theater.href)]);
-  const miles =
-    foundViaOrigin || !origin || !venue ? theater.miles : haversineMiles(origin, venue);
-  return { miles, coords: venue };
+  const [origin, venue] = await Promise.all([
+    zipCentroid(originZip),
+    theaterCoords(venueKey(theater.href)),
+  ]);
+  const measured = origin && venue ? haversineMiles(origin, venue) : null;
+  return { miles: originMiles ?? measured ?? fallbackMiles, coords: venue };
 }
 
 /** Coordinate lookups issued at once; they hit a different host to the scrape. */
@@ -93,18 +100,26 @@ const GEO_CONCURRENCY = 8;
 /**
  * Re-measure every venue-day against the search origin.
  *
- * Distances are resolved once per venue and in parallel. Walking the days in
+ * Resolved once per venue — not per venue-day — so a theater carries one
+ * distance and one set of coordinates across the whole window, whatever mix of
+ * seed pages listed it. Distances are resolved in parallel; walking the days in
  * order instead meant one serial HTTP round trip per new theater, which cost
  * over a minute of dead time at the end of a month-long run.
+ *
+ * `originSeedMiles` maps a venue key to the mileage the origin ZIP's own pages
+ * reported for it.
  */
 export async function normalizeDistances(
   days: readonly VenueDay[],
   originZip: string,
-  originSeedHrefs: ReadonlySet<string>,
+  originSeedMiles: ReadonlyMap<string, number>,
 ): Promise<VenueDay[]> {
   const unique = new Map<string, Theater>();
+  const widest = new Map<string, number>();
   for (const day of days) {
-    if (!unique.has(day.theater.href)) unique.set(day.theater.href, day.theater);
+    const key = venueKey(day.theater.href);
+    if (!unique.has(key)) unique.set(key, day.theater);
+    widest.set(key, Math.max(widest.get(key) ?? 0, day.theater.miles));
   }
 
   const entries = [...unique.entries()];
@@ -116,14 +131,22 @@ export async function normalizeDistances(
         const index = next++;
         const entry = entries[index];
         if (entry === undefined) return;
-        const [href, theater] = entry;
-        located.set(href, await locate(theater, originZip, originSeedHrefs.has(href)));
+        const [key, theater] = entry;
+        located.set(
+          key,
+          await locate(
+            theater,
+            originZip,
+            originSeedMiles.get(key),
+            widest.get(key) ?? theater.miles,
+          ),
+        );
       }
     }),
   );
 
   return days.map((day) => {
-    const fix = located.get(day.theater.href);
+    const fix = located.get(venueKey(day.theater.href));
     return {
       ...day,
       theater: {

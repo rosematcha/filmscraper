@@ -8,6 +8,7 @@ import {
   normalizeDistances,
   seedBudget,
   THEATERS_PER_ZIP_CAP,
+  venueKey,
 } from './seeds.js';
 
 const SITE = 'https://www.fandango.com';
@@ -230,7 +231,15 @@ export async function harvestFandango(
   seedDays.set(options.zip, first.days);
   warnings.push(...first.warnings);
 
-  const originHrefs = new Set(first.days.map((d) => d.theater.href));
+  // What the origin ZIP's own page said about each venue. Fandango measures
+  // from whichever ZIP was searched, so this is the only mileage in the run
+  // that is already relative to the right place.
+  const originSeedMiles = new Map<string, number>();
+  const recordOriginMiles = (found: readonly VenueDay[]): void => {
+    for (const d of found) originSeedMiles.set(venueKey(d.theater.href), d.theater.miles);
+  };
+  recordOriginMiles(first.days);
+  const originKeys = new Set(originSeedMiles.keys());
   let frontier = first.days.map((d) => d.theater);
 
   while (isCapped(frontier, options.radiusMiles) && seeds.length < seedBudget()) {
@@ -251,7 +260,7 @@ export async function harvestFandango(
       ).catch(() => ({ days: [] as VenueDay[], warnings: [] }));
       completed++;
       seedDays.set(seed, extra.days);
-      discovered += extra.days.filter((d) => !originHrefs.has(d.theater.href)).length;
+      discovered += extra.days.filter((d) => !originKeys.has(venueKey(d.theater.href))).length;
     }
     if (discovered === 0) break;
     frontier = [...seedDays.values()].flat().map((d) => d.theater);
@@ -301,16 +310,20 @@ export async function harvestFandango(
     }
   });
 
-  for (const result of outcomes) {
+  outcomes.forEach((result, index) => {
     days.push(...result.days);
     warnings.push(...result.warnings);
-  }
+    // A venue can be absent from the origin's first-date list and present on a
+    // later one, so every origin-seed page contributes its mileage.
+    if (jobs[index]?.seed === options.zip) recordOriginMiles(result.days);
+  });
 
   // Neighbouring seeds overlap heavily, so the same venue-day arrives several
-  // times; keep one of each before anything downstream counts listings.
+  // times; keep one of each before anything downstream counts listings. Keyed
+  // by venue rather than href, because the href carries the date it was read on.
   const unique = new Map<string, VenueDay>();
-  for (const day of days) unique.set(`${day.theater.href} ${day.date}`, day);
+  for (const day of days) unique.set(`${venueKey(day.theater.href)} ${day.date}`, day);
 
-  const measured = await normalizeDistances([...unique.values()], options.zip, originHrefs);
+  const measured = await normalizeDistances([...unique.values()], options.zip, originSeedMiles);
   return { days: measured.filter((d) => d.theater.miles <= options.radiusMiles), warnings };
 }

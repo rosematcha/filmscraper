@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { haversineMiles, postalCodeFrom } from '../src/core/geo.js';
-import { isCapped, nextSeeds, THEATERS_PER_ZIP_CAP } from '../src/sources/fandango/seeds.js';
+import {
+  isCapped,
+  nextSeeds,
+  venueKey,
+  THEATERS_PER_ZIP_CAP,
+} from '../src/sources/fandango/seeds.js';
 import type { Theater } from '../src/core/types.js';
 
 const theater = (miles: number, address?: string): Theater => ({
@@ -37,6 +42,25 @@ describe('postalCodeFrom', () => {
     expect(postalCodeFrom('San Antonio, TX')).toBeNull();
     // A street number must not be mistaken for a ZIP.
     expect(postalCodeFrom('17703 IH 10 West')).toBeNull();
+  });
+});
+
+describe('venueKey', () => {
+  it('is the same venue on every date', () => {
+    const monday = venueKey('/amc-boerne-11-aaxyz/theater-page?date=2026-08-16');
+    const tuesday = venueKey('/amc-boerne-11-aaxyz/theater-page?date=2026-08-17');
+    expect(monday).toBe('/amc-boerne-11-aaxyz/theater-page');
+    expect(tuesday).toBe(monday);
+  });
+
+  it('leaves a bare theater path alone', () => {
+    expect(venueKey('/amc-boerne-11-aaxyz/theater-page')).toBe('/amc-boerne-11-aaxyz/theater-page');
+  });
+
+  it('separates genuinely different venues', () => {
+    expect(venueKey('/a-aaxyz/theater-page?date=2026-08-16')).not.toBe(
+      venueKey('/b-aaxyz/theater-page?date=2026-08-16'),
+    );
   });
 });
 
