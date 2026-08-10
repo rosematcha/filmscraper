@@ -8,7 +8,21 @@ import {
   openCaptionEntry,
   unfilteredSources,
   DEFAULT_SECTION_OPTIONS,
+  DEFAULT_TABLE_IDS,
+  SECTIONS,
+  type SectionOptions,
 } from '../src/core/sections.js';
+
+/** Options carrying exactly the named tables, and nothing else. */
+const only = (...tables: string[]): SectionOptions => ({
+  ...DEFAULT_SECTION_OPTIONS,
+  tables,
+  currentYear: 2026,
+});
+
+/** Every table but the named ones. */
+const without = (...dropped: string[]): SectionOptions =>
+  only(...DEFAULT_TABLE_IDS.filter((id) => !dropped.includes(id)));
 import type { AggregatedMovie, Amenity, VenueDay } from '../src/core/types.js';
 
 describe('foreignLanguageOf', () => {
@@ -91,11 +105,7 @@ describe('buildSections', () => {
     sections.find((s) => s.id === id);
 
   it('breaks the drive-in and library into their own tables', () => {
-    const sections = buildSections(movies, {
-      ...DEFAULT_SECTION_OPTIONS,
-      separateEvents: false,
-      foreign: 'inline',
-    });
+    const sections = buildSections(movies, without('events', 'foreign'));
     expect(find(sections, 'drive-in')?.movies.map((m) => m.title)).toEqual(['Drive-In Only']);
     expect(find(sections, 'library')?.movies.map((m) => m.title)).toEqual(['Library Only']);
     // Foreign stays inline by default.
@@ -106,24 +116,18 @@ describe('buildSections', () => {
   });
 
   it('keeps everything in one table when the options are off', () => {
-    const sections = buildSections(movies, {
-      ...DEFAULT_SECTION_OPTIONS,
-      separateDriveIn: false,
-      separateLibrary: false,
-      separateEvents: false,
-      foreign: 'inline',
-    });
+    const sections = buildSections(movies, only());
     expect(sections).toHaveLength(1);
     expect(sections[0]?.movies).toHaveLength(4);
   });
 
   it('can give non-English releases their own table', () => {
-    const sections = buildSections(movies, { ...DEFAULT_SECTION_OPTIONS, foreign: 'separate' });
+    const sections = buildSections(movies, only('foreign'));
     expect(find(sections, 'foreign')?.movies.map((m) => m.title)).toEqual(['Foreign Film']);
   });
 
   it('can drop non-English releases entirely', () => {
-    const sections = buildSections(movies, { ...DEFAULT_SECTION_OPTIONS, foreign: 'exclude' });
+    const sections = buildSections(movies, { ...only(), excludeForeign: true });
     expect(sections.flatMap((s) => s.movies).map((m) => m.title)).not.toContain('Foreign Film');
   });
 
@@ -134,21 +138,13 @@ describe('buildSections', () => {
       day(undefined, 'Spider-Man', [group([])]),
       { ...day('stars-and-stripes', 'Spider-Man', [group([])]), theater: { name: 'Drive-In', href: '', miles: 30 } },
     ]);
-    const sections = buildSections(shared, {
-      ...DEFAULT_SECTION_OPTIONS,
-      separateEvents: false,
-      foreign: 'inline',
-    });
+    const sections = buildSections(shared, without('events', 'foreign'));
     expect(find(sections, 'main')?.movies.map((m) => m.title)).toEqual(['Spider-Man']);
     expect(find(sections, 'drive-in')?.movies.map((m) => m.title)).toEqual(['Spider-Man']);
   });
 
   it('keeps a venue-exclusive film out of the main table', () => {
-    const sections = buildSections(movies, {
-      ...DEFAULT_SECTION_OPTIONS,
-      separateEvents: false,
-      foreign: 'inline',
-    });
+    const sections = buildSections(movies, without('events', 'foreign'));
     expect(find(sections, 'main')?.movies.map((m) => m.title)).not.toContain('Drive-In Only');
     expect(find(sections, 'main')?.movies.map((m) => m.title)).not.toContain('Library Only');
   });
@@ -157,9 +153,7 @@ describe('buildSections', () => {
 describe('unfilteredSources', () => {
   it('exempts exactly the venues given their own table', () => {
     expect([...unfilteredSources(DEFAULT_SECTION_OPTIONS)].sort()).toEqual(['sapl', 'stars-and-stripes']);
-    expect([...unfilteredSources({ ...DEFAULT_SECTION_OPTIONS, separateLibrary: false })]).toEqual([
-      'stars-and-stripes',
-    ]);
+    expect([...unfilteredSources(without('library'))]).toEqual(['stars-and-stripes']);
   });
 });
 
@@ -169,6 +163,7 @@ describe('isSpecialEvent', () => {
     title: 'X',
     href: '/x',
     theaters: ['a'],
+    freeVenues: [],
     dates: ['2026-08-04'],
     formats: new Map(),
     optional: new Map(),
@@ -249,9 +244,9 @@ describe('isSpecialEvent', () => {
 
   it('only builds the events table when asked', () => {
     const revival = movie({ title: 'The Goonies', releaseYear: 1985, dates: ['d1'] });
-    const inline = buildSections([revival], { ...DEFAULT_SECTION_OPTIONS, separateEvents: false });
+    const inline = buildSections([revival], only());
     expect(inline.find((s) => s.id === 'events')).toBeUndefined();
-    const split = buildSections([revival], { ...DEFAULT_SECTION_OPTIONS, separateEvents: true });
+    const split = buildSections([revival], only('events'));
     expect(split.find((s) => s.id === 'events')?.movies).toHaveLength(1);
   });
 });
@@ -262,6 +257,7 @@ describe('open-caption table', () => {
     title,
     href: `/${title}`,
     theaters: ['Regal'],
+    freeVenues: [],
     dates: ['2026-08-04', '2026-08-05'],
     formats: new Map(),
     optional: oc ? new Map([['Open caption', ['Regal']]]) : new Map(),
@@ -277,16 +273,13 @@ describe('open-caption table', () => {
   const films = [withOc('Captioned', true), withOc('Plain', false)];
 
   it('is absent unless asked for', () => {
-    const sections = buildSections(films, DEFAULT_SECTION_OPTIONS);
+    const sections = buildSections(films, only(...DEFAULT_TABLE_IDS));
     expect(sections.find((s) => s.id === 'open-captions')).toBeUndefined();
   });
 
   it('lists captioned films without removing them from the main table', () => {
     // Duplication is intended: the film still has ordinary screenings.
-    const sections = buildSections(films, {
-      ...DEFAULT_SECTION_OPTIONS,
-      separateOpenCaptions: true,
-    });
+    const sections = buildSections(films, only('open-captions'));
     expect(sections.find((s) => s.id === 'open-captions')?.movies.map((m) => m.title)).toEqual([
       'Captioned',
     ]);
@@ -320,11 +313,25 @@ describe('open-caption table', () => {
 
 describe('default section options', () => {
   it('splits events and non-English releases out of the box', () => {
-    expect(DEFAULT_SECTION_OPTIONS.separateDriveIn).toBe(true);
-    expect(DEFAULT_SECTION_OPTIONS.separateLibrary).toBe(true);
-    expect(DEFAULT_SECTION_OPTIONS.separateEvents).toBe(true);
-    expect(DEFAULT_SECTION_OPTIONS.foreign).toBe('separate');
-    // Open captions duplicate rows, so that one stays opt-in.
-    expect(DEFAULT_SECTION_OPTIONS.separateOpenCaptions).toBe(false);
+    expect([...DEFAULT_SECTION_OPTIONS.tables].sort()).toEqual([
+      'drive-in',
+      'events',
+      'foreign',
+      'free',
+      'last-chance',
+      'library',
+      'opens',
+    ]);
+    // Open captions duplicate rows for a minority audience, so that one is the
+    // single table left opt-in.
+    expect(DEFAULT_SECTION_OPTIONS.tables).not.toContain('open-captions');
+    expect(DEFAULT_SECTION_OPTIONS.excludeForeign).toBe(false);
+  });
+
+  it('gives every table a label and a hint for the checklist', () => {
+    for (const section of SECTIONS) {
+      expect(section.label, section.id).not.toBe('');
+      expect(section.hint, section.id).not.toBe('');
+    }
   });
 });

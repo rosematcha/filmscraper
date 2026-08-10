@@ -1,6 +1,18 @@
 import { buildNotes } from './notes.js';
 import { buildSections, DEFAULT_SECTION_OPTIONS, type SectionOptions } from './sections.js';
+import type { RunWindow } from './run.js';
 import type { AggregatedMovie, IsoDate, RenderOptions, ScrapeResult } from './types.js';
+
+/**
+ * The dates a result can actually speak to.
+ *
+ * The tables that highlight a closing or opening run need the same posting
+ * boundaries the Notes cell respects, or they would call a film "last chance"
+ * on the strength of a Friday nobody has published yet.
+ */
+function runWindow(result: ScrapeResult): RunWindow {
+  return { windowDates: result.dates, knownFrom: result.knownFrom, horizon: result.horizon };
+}
 
 const SITE = 'https://www.fandango.com';
 
@@ -117,7 +129,7 @@ export function renderRows(
   theaterNames: Readonly<Record<string, string>>,
   sectionOptions: SectionOptions = DEFAULT_SECTION_OPTIONS,
 ): SortedMovie[] {
-  return buildSections(result.movies, sectionOptions).flatMap((section) =>
+  return buildSections(result.movies, sectionOptions, runWindow(result)).flatMap((section) =>
     sortMovies(section.movies).map((movie) => ({
       ...toRow(movie, result, options, theaterNames),
       section: section.id,
@@ -135,7 +147,7 @@ export function renderMarkdown(
   sectionOptions: SectionOptions = DEFAULT_SECTION_OPTIONS,
 ): string {
   const blocks: string[] = [];
-  for (const section of buildSections(result.movies, sectionOptions)) {
+  for (const section of buildSections(result.movies, sectionOptions, runWindow(result))) {
     if (section.movies.length === 0) continue;
     const lines = section.heading ? [`### ${section.heading}`, '', ...HEADER] : [...HEADER];
     for (const movie of sortMovies(section.movies)) {

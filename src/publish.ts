@@ -13,7 +13,7 @@ import { loadAliases } from './core/config.js';
 import { isDataset, mergeDataset, type Dataset } from './core/dataset.js';
 import { allSources, dueSources } from './core/schedule.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
-import { unfilteredSources, DEFAULT_SECTION_OPTIONS } from './core/sections.js';
+import { unfilteredSources, DEFAULT_SECTION_OPTIONS, SECTIONS } from './core/sections.js';
 import type { ProgressUpdate } from './core/types.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
 import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
@@ -146,10 +146,11 @@ try {
       keepYears: true,
       timezone: options.timezone,
       onProgress: progress,
+      // The published dataset must carry every venue the site might later
+      // break out, so the radius exemptions are taken at their widest.
       unfilteredSources: unfilteredSources({
         ...DEFAULT_SECTION_OPTIONS,
-        separateDriveIn: true,
-        separateLibrary: true,
+        tables: SECTIONS.map((s) => s.id),
       }),
     },
   );

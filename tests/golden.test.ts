@@ -40,11 +40,7 @@ function resultFor(dates: string[]): ScrapeResult {
 /** One flat table, so this suite tests row rendering rather than sectioning. */
 const FLAT = {
   ...DEFAULT_SECTION_OPTIONS,
-  separateDriveIn: false,
-  separateLibrary: false,
-  separateEvents: false,
-  separateOpenCaptions: false,
-  foreign: 'inline' as const,
+  tables: [],
   currentYear: 2026,
 };
 

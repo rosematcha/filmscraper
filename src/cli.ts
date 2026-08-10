@@ -6,7 +6,13 @@ import { loadAliases } from './core/config.js';
 import { paddedRadius } from './core/filters.js';
 import { renderMarkdown, renderWarnings } from './core/markdown.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
-import { unfilteredSources, type ForeignMode, type SectionOptions } from './core/sections.js';
+import {
+  DEFAULT_TABLE_IDS,
+  knownTables,
+  SECTIONS,
+  unfilteredSources,
+  type SectionOptions,
+} from './core/sections.js';
 import type { ProgressUpdate, RenderOptions, ScrapeRequest } from './core/types.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
 import { geocodeAddress, zipCentroid } from './net/geocode.js';
@@ -48,11 +54,8 @@ interface CliOptions {
   quiet: boolean;
   sources: string[];
   concurrency: number;
-  separateDriveIn: boolean;
-  separateLibrary: boolean;
-  separateEvents: boolean;
-  separateOpenCaptions: boolean;
-  foreign: ForeignMode;
+  tables: string[];
+  excludeForeign: boolean;
   excludeChains: string[];
   anchor?: string;
 }
@@ -81,25 +84,22 @@ const program = new Command()
     positiveNumber,
     2,
   )
-  .option('--no-separate-drive-in', 'keep drive-in films in the main table')
-  .option('--no-separate-library', 'keep library screenings in the main table')
-  .option('--no-separate-events', 'keep revivals and one-off events in the main table')
   .option(
-    '--separate-open-captions',
-    'add a table of open-caption screenings (films may repeat)',
-    false,
-  )
-  .option(
-    '--foreign <mode>',
-    'non-English releases: separate, inline or exclude',
+    '-T, --tables <ids>',
+    `tables to build — ${SECTIONS.map((s) => s.id).join(', ')}, or "all" / "none"`,
     (value: string) => {
-      if (value !== 'inline' && value !== 'separate' && value !== 'exclude') {
-        throw new InvalidArgumentError('expected inline, separate or exclude');
+      const ids = value.split(',').map((v) => v.trim()).filter(Boolean);
+      if (ids.includes('none')) return [];
+      if (ids.includes('all')) return SECTIONS.map((s) => s.id);
+      const unknownIds = ids.filter((id) => !SECTIONS.some((s) => s.id === id));
+      if (unknownIds.length > 0) {
+        throw new InvalidArgumentError(`unknown table(s): ${unknownIds.join(', ')}`);
       }
-      return value;
+      return knownTables(ids);
     },
-    'separate',
+    [...DEFAULT_TABLE_IDS],
   )
+  .option('--exclude-foreign', 'drop non-English releases from the output entirely', false)
   .option(
     '-x, --exclude-chains <chains>',
     `drop these chains (${chainIds().join(', ')})`,
@@ -139,11 +139,8 @@ const request: ScrapeRequest = {
 };
 
 const sectionOptions: SectionOptions = {
-  separateDriveIn: options.separateDriveIn,
-  separateLibrary: options.separateLibrary,
-  separateEvents: options.separateEvents,
-  separateOpenCaptions: options.separateOpenCaptions,
-  foreign: options.foreign,
+  tables: options.tables,
+  excludeForeign: options.excludeForeign,
   currentYear: Number(todayIn(options.timezone).slice(0, 4)),
 };
 

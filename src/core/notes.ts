@@ -1,11 +1,9 @@
 import { classifyAmenity } from './amenities.js';
+import { classifyRun } from './run.js';
 import type { AggregatedMovie, IsoDate, RenderOptions } from './types.js';
 
 /** At or below this many venues, a note names them instead of counting them. */
 export const NAMED_THEATER_LIMIT = 3;
-
-/** Below this many dates, listing the days beats describing a run. */
-const MIN_DATES_FOR_RUN = 3;
 
 /** Rank lookup so notes lead with the rarest format. */
 function formatRank(label: string): number {
@@ -56,23 +54,12 @@ export function dateRange(from: IsoDate, to: IsoDate): IsoDate[] {
   return dates;
 }
 
-/** True when `dates` includes every entry of `range` between `from` and `to` inclusive. */
-function coversSpan(
-  dates: readonly IsoDate[],
-  range: readonly IsoDate[],
-  from: IsoDate,
-  to: IsoDate,
-): boolean {
-  return range.filter((d) => d >= from && d <= to).every((d) => dates.includes(d));
-}
-
 /**
- * Describe when a movie plays, given how far the posted schedule actually runs.
+ * Phrase when a movie plays, from the shape of its run.
  *
- * The naive version — "any date in the window it does not play is a gap" —
- * labelled most of the week's releases "Sunday through Thursday only", because
- * Fandango simply has not posted Friday yet. Everything past `horizon` is
- * therefore treated as unknown rather than absent.
+ * The judgement itself lives in `classifyRun`, because the highlight tables ask
+ * the same question and the two must not be able to disagree about whether a
+ * film is closing.
  */
 export function describeDates(
   playedDates: readonly IsoDate[],
@@ -80,68 +67,29 @@ export function describeDates(
   knownFrom: IsoDate,
   horizon: IsoDate,
 ): string | null {
-  if (playedDates.length === 0 || windowDates.length === 0) return null;
-
-  const known = windowDates.filter((d) => d >= knownFrom && d <= horizon);
-  const playedKnown = playedDates.filter((d) => d >= knownFrom && d <= horizon);
-  const first = playedDates[0] ?? '';
-
-  // Nothing inside the reliable range: a pre-sold future event (or a title whose
-  // only showings today have already started), so state its actual dates.
-  if (playedKnown.length === 0 || known.length === 0) {
-    if (playedDates.length === 1) return `${monthDay(first)} only`;
-    // A wide release that goes on sale before the schedule is posted covers
-    // every remaining day of the window. Enumerating those days reads as a
-    // limited engagement when it is the opposite — an opening whose run almost
-    // certainly continues past the window.
-    if (opensAndRuns(playedDates, windowDates)) return `opens ${monthDay(first)}`;
-    return `${humanList(playedDates.map(monthDay))} only`;
+  const { shape, date } = classifyRun(playedDates, { windowDates, knownFrom, horizon });
+  const on = date ?? '';
+  switch (shape) {
+    case 'none':
+    case 'throughout':
+      return null;
+    case 'single':
+      return `${monthDay(on)} only`;
+    case 'presale-opens':
+      return `opens ${monthDay(on)}`;
+    case 'opens':
+      return `opens ${weekdayOrDate(on, windowDates)}`;
+    case 'closing':
+      return `through ${weekdayOrDate(on, windowDates)}`;
+    case 'listed': {
+      // A film with nothing inside the reliable range is a pre-sale with no
+      // weekday context around it, so its dates are spelled out in full.
+      const inRange = (d: IsoDate): boolean => d >= knownFrom && d <= horizon;
+      const reliable = playedDates.some(inRange) && windowDates.some(inRange);
+      const label = (d: IsoDate): string => (reliable ? weekdayOrDate(d, windowDates) : monthDay(d));
+      return `${humanList(playedDates.map(label))} only`;
+    }
   }
-
-  const windowStart = known[0] ?? '';
-  const lastKnown = known.at(-1) ?? '';
-  const firstKnown = playedKnown[0] ?? '';
-  const lastPlayedKnown = playedKnown.at(-1) ?? '';
-
-  // Runs unbroken from its first date to the edge of what we know.
-  if (coversSpan(playedKnown, known, firstKnown, lastKnown)) {
-    if (firstKnown === windowStart) return null; // plays throughout
-    // One listed date that happens to be the last we know about is not evidence
-    // of an opening — Willy Wonka's single Wednesday is a one-night event.
-    if (playedDates.length === 1) return `${monthDay(first)} only`;
-    return `opens ${weekdayOrDate(firstKnown, windowDates)}`;
-  }
-
-  // Runs unbroken from the start of the window but stops before the horizon:
-  // genuinely ending its engagement, not merely unposted. Only worth phrasing
-  // as a run once it spans a few days — a two-night booking reads better
-  // enumerated ("Monday and Tuesday only") than as "through Tuesday".
-  if (
-    playedDates.length >= MIN_DATES_FOR_RUN &&
-    firstKnown === windowStart &&
-    lastPlayedKnown < lastKnown &&
-    coversSpan(playedKnown, known, windowStart, lastPlayedKnown)
-  ) {
-    return `through ${weekdayOrDate(lastPlayedKnown, windowDates)}`;
-  }
-
-  if (playedDates.length === 1) return `${monthDay(first)} only`;
-  return `${humanList(playedDates.map((d) => weekdayOrDate(d, windowDates)))} only`;
-}
-
-/**
- * True when the film plays an unbroken stretch from its first date to the end
- * of the window. Held to a few days so a two-night pre-sale still reads as the
- * pair of dates it is.
- */
-function opensAndRuns(playedDates: readonly IsoDate[], windowDates: readonly IsoDate[]): boolean {
-  const first = playedDates[0] ?? '';
-  const end = windowDates.at(-1) ?? '';
-  return (
-    playedDates.length >= MIN_DATES_FOR_RUN &&
-    playedDates.includes(end) &&
-    coversSpan(playedDates, windowDates, first, end)
-  );
 }
 
 /** Weekdays read better inside a week; longer windows need the date. */
@@ -197,6 +145,18 @@ export function buildNotes(
           : label,
       );
     }
+  }
+
+  // --- admission ----------------------------------------------------------
+  // Free is the rarest thing a screening can be in a table of multiplexes, and
+  // it is only ever claimed where a listing said so outright.
+  if (movie.freeVenues.length > 0) {
+    const everywhere = movie.freeVenues.length === allTheaters.size;
+    clauses.push(
+      !everywhere && movie.freeVenues.length <= NAMED_THEATER_LIMIT
+        ? `free at ${humanList(movie.freeVenues.map(short))}`
+        : 'free',
+    );
   }
 
   // --- language -----------------------------------------------------------

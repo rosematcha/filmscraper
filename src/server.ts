@@ -9,7 +9,13 @@ import { paddedRadius } from './core/filters.js';
 import { renderMarkdown, renderRows } from './core/markdown.js';
 import { shortenTheater } from './core/notes.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
-import { unfilteredSources, type ForeignMode, type SectionOptions } from './core/sections.js';
+import {
+  DEFAULT_TABLE_IDS,
+  knownTables,
+  SECTIONS,
+  unfilteredSources,
+  type SectionOptions,
+} from './core/sections.js';
 import type { RenderOptions, ScrapeRequest } from './core/types.js';
 import type { Coords } from './core/geo.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
@@ -30,11 +36,8 @@ interface ScrapeBody {
   showLanguage?: unknown;
   sources?: unknown;
   concurrency?: unknown;
-  separateDriveIn?: unknown;
-  separateLibrary?: unknown;
-  separateEvents?: unknown;
-  separateOpenCaptions?: unknown;
-  foreign?: unknown;
+  tables?: unknown;
+  excludeForeign?: unknown;
   excludeChains?: unknown;
   anchor?: unknown;
 }
@@ -70,8 +73,9 @@ function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
   const concurrency =
     typeof body.concurrency === 'number' && body.concurrency >= 1 ? body.concurrency : 2;
 
-  const foreign: ForeignMode =
-    body.foreign === 'inline' || body.foreign === 'exclude' ? body.foreign : 'separate';
+  const tables = Array.isArray(body.tables)
+    ? knownTables(body.tables.filter((id): id is string => typeof id === 'string'))
+    : [...DEFAULT_TABLE_IDS];
 
   const excludedChains = new Set(
     (Array.isArray(body.excludeChains) ? body.excludeChains : [])
@@ -88,11 +92,8 @@ function parseBody(body: ScrapeBody): ParsedBody | { error: string } {
     excludedChains,
     anchor,
     sections: {
-      separateDriveIn: body.separateDriveIn !== false,
-      separateLibrary: body.separateLibrary !== false,
-      separateEvents: body.separateEvents !== false,
-      separateOpenCaptions: body.separateOpenCaptions === true,
-      foreign,
+      tables,
+      excludeForeign: body.excludeForeign === true,
       currentYear: Number(todayIn(TIMEZONE).slice(0, 4)),
     },
     request: { zip, from, to, radiusMiles: radius },
@@ -110,6 +111,19 @@ app.use('/api/*', cors());
 app.get('/api/health', (c) => c.json({ ok: true, timezone: TIMEZONE }));
 
 app.get('/api/sources', (c) => c.json({ sources: SOURCES }));
+
+/** The tables the build supports, so the checklist is never out of date. */
+app.get('/api/tables', (c) =>
+  c.json({
+    tables: SECTIONS.map(({ id, label, hint, mode, defaultOn }) => ({
+      id,
+      label,
+      hint,
+      mode,
+      defaultOn,
+    })),
+  }),
+);
 
 /**
  * Scrape and stream progress.
