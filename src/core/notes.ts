@@ -89,9 +89,13 @@ export function describeDates(
   // Nothing inside the reliable range: a pre-sold future event (or a title whose
   // only showings today have already started), so state its actual dates.
   if (playedKnown.length === 0 || known.length === 0) {
-    return playedDates.length === 1
-      ? `${monthDay(first)} only`
-      : `${humanList(playedDates.map(monthDay))} only`;
+    if (playedDates.length === 1) return `${monthDay(first)} only`;
+    // A wide release that goes on sale before the schedule is posted covers
+    // every remaining day of the window. Enumerating those days reads as a
+    // limited engagement when it is the opposite — an opening whose run almost
+    // certainly continues past the window.
+    if (opensAndRuns(playedDates, windowDates)) return `opens ${monthDay(first)}`;
+    return `${humanList(playedDates.map(monthDay))} only`;
   }
 
   const windowStart = known[0] ?? '';
@@ -123,6 +127,21 @@ export function describeDates(
 
   if (playedDates.length === 1) return `${monthDay(first)} only`;
   return `${humanList(playedDates.map((d) => weekdayOrDate(d, windowDates)))} only`;
+}
+
+/**
+ * True when the film plays an unbroken stretch from its first date to the end
+ * of the window. Held to a few days so a two-night pre-sale still reads as the
+ * pair of dates it is.
+ */
+function opensAndRuns(playedDates: readonly IsoDate[], windowDates: readonly IsoDate[]): boolean {
+  const first = playedDates[0] ?? '';
+  const end = windowDates.at(-1) ?? '';
+  return (
+    playedDates.length >= MIN_DATES_FOR_RUN &&
+    playedDates.includes(end) &&
+    coversSpan(playedDates, windowDates, first, end)
+  );
 }
 
 /** Weekdays read better inside a week; longer windows need the date. */

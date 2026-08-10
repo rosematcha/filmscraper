@@ -98,6 +98,13 @@ describe('describeDates', () => {
     );
   });
 
+  it('reads a pre-sold run to the end of the window as an opening', () => {
+    // PAW Patrol goes on sale for Thursday onward before Fandango posts the
+    // week; "August 6, 7 and 8 only" claimed a limited run that does not exist.
+    const played = ['2026-08-06', '2026-08-07', '2026-08-08'];
+    expect(describeDates(played, WEEK, WEEK[0] ?? '', '2026-08-05')).toBe('opens August 6');
+  });
+
   it('lists genuinely broken runs', () => {
     const played = ['2026-08-02', '2026-08-04', '2026-08-06'];
     expect(describeDates(played, WEEK, WEEK[0] ?? '', HORIZON)).toBe('Sunday, Tuesday and Thursday only');
