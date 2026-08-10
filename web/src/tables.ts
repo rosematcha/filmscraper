@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { DEFAULT_TABLE_IDS, SECTIONS, knownTables } from '@core/core/sections.js';
 
 export { SECTIONS };
@@ -76,7 +76,10 @@ export interface TablePrefs {
 /** The table checklist, remembered across visits. */
 export function useTablePrefs(): TablePrefs {
   const [stored, setStored] = useState<StoredTables | null>(read);
-  const tables = resolve(stored);
+  // Stable between renders: this list is a dependency of the memo that
+  // re-derives the whole table from the nightly dataset, and a fresh array
+  // every render would re-run it on every keystroke and every progress tick.
+  const tables = useMemo(() => knownTables(resolve(stored)), [stored]);
 
   const setTable = useCallback((id: string, enabled: boolean) => {
     setStored((prev) => {
@@ -101,7 +104,7 @@ export function useTablePrefs(): TablePrefs {
   }, []);
 
   return {
-    tables: knownTables(tables),
+    tables,
     excludeForeign: stored?.excludeForeign ?? false,
     setTable,
     setExcludeForeign,

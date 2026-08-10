@@ -29,7 +29,7 @@ const PAID =
  * the pattern requires a word that refers to entry.
  */
 const FREE =
-  /\b(free\s+(?:and\s+open\s+to\s+the\s+public|admission|entry|event|screening|movie|film|to\s+(?:attend|the\s+public))|admission\s+is\s+free|no\s+(?:admission\s+)?(?:charge|cost)|free\s*[!.,]|open\s+to\s+the\s+public\s+(?:for\s+)?free)\b/i;
+  /\b(?:free\s+(?:and\s+open\s+to\s+the\s+public|admission|entry|event|screening|movie|film|to\s+(?:attend|the\s+public))|admission\s+is\s+free|no\s+(?:admission\s+)?(?:charge|cost)|open\s+to\s+the\s+public\s+(?:for\s+)?free)\b|\bfree\s*[!.]/i;
 
 /** "Free with admission" prices the film at the door, whatever the door costs. */
 const FREE_WITH = /\bfree\s+with\b/i;

@@ -57,3 +57,14 @@ describe('textOf', () => {
     expect(textOf(html)).toBe('A Minecraft Movie Free admission');
   });
 });
+
+describe('free phrasing that stands alone', () => {
+  it('accepts a bare "free" when it is the whole claim', () => {
+    expect(detectAdmission('Free! Bring a lawn chair.')).toBe('free');
+    expect(detectAdmission('This event is free.')).toBe('free');
+  });
+
+  it('still refuses a bare "free" attached to something other than entry', () => {
+    expect(detectAdmission('Free popcorn while it lasts')).toBe('unknown');
+  });
+});

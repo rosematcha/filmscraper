@@ -16,6 +16,7 @@ function movie(over: Partial<AggregatedMovie> = {}): AggregatedMovie {
     href: '/x-1/movie-overview',
     theaters: [],
     freeVenues: [],
+    freeDates: [],
     dates: [],
     formats: new Map(),
     optional: new Map(),

@@ -103,12 +103,20 @@ export function openCaptionEntry(movie: AggregatedMovie): AggregatedMovie {
     theaters: movie.optional.get(OPEN_CAPTION_LABEL) ?? [],
     dates: movie.optionalDates.get(OPEN_CAPTION_LABEL) ?? [],
     formats: new Map(),
+    optional: new Map(),
+    optionalDates: new Map(),
   };
 }
 
-/** The free screenings, and only those, as their own entry. */
+/**
+ * The free screenings, and only those, as their own entry.
+ *
+ * Narrowed on both axes for the same reason the captioned entry is: a film
+ * that is free in a park on Saturday and sixteen dollars all week at the
+ * multiplex must not borrow the week to describe the Saturday.
+ */
 export function freeEntry(movie: AggregatedMovie): AggregatedMovie {
-  return { ...movie, theaters: movie.freeVenues, formats: new Map() };
+  return { ...movie, theaters: movie.freeVenues, dates: movie.freeDates, formats: new Map() };
 }
 
 /** True when this source listed the film at all. */
@@ -270,25 +278,40 @@ export function buildSections(
   const ctx: SectionContext = { ...window, currentYear: options.currentYear };
   const active = SECTIONS.filter((s) => options.tables.includes(s.id));
   const collected = new Map<string, AggregatedMovie[]>(active.map((s) => [s.id, []]));
+  const byMode = {
+    venue: active.filter((s) => s.mode === 'venue'),
+    claims: active.filter((s) => s.mode === 'claims'),
+    duplicates: active.filter((s) => s.mode === 'duplicates'),
+  };
   const main: AggregatedMovie[] = [];
 
   for (const movie of movies) {
     if (movie.foreign && options.excludeForeign) continue;
 
     let claimed = false;
-    for (const section of active) {
-      // A row belongs to one partition, not to every partition it qualifies
-      // for: a revival that is also non-English is listed once, under whichever
-      // table comes first.
-      if (claimed && section.mode !== 'duplicates') continue;
+    // Venue tables are answered first and unconditionally: "what is on at the
+    // library this week" is a question about the venue, and nearly every film
+    // it screens is also a revival, so letting the events table claim the row
+    // first would leave the library table permanently empty.
+    for (const section of byMode.venue) {
       if (!section.match(movie, ctx)) continue;
-      const entry = section.project ? section.project(movie) : movie;
-      collected.get(section.id)?.push(entry);
-      // A venue table answers "what is on at the drive-in this week", so it
-      // lists everything playing there — including wide releases that also play
-      // a multiplex, which keep their place in the main table.
-      if (section.mode === 'claims') claimed = true;
-      if (section.mode === 'venue' && movie.sources.length === 1) claimed = true;
+      collected.get(section.id)?.push(movie);
+      // A wide release that also plays a multiplex keeps its main-table row;
+      // only a film with nowhere else to play moves.
+      if (movie.sources.length === 1) claimed = true;
+    }
+    // A row belongs to one partition, not to every partition it qualifies for:
+    // a revival that is also non-English is listed once, under whichever table
+    // comes first.
+    for (const section of byMode.claims) {
+      if (claimed) break;
+      if (!section.match(movie, ctx)) continue;
+      collected.get(section.id)?.push(movie);
+      claimed = true;
+    }
+    for (const section of byMode.duplicates) {
+      if (!section.match(movie, ctx)) continue;
+      collected.get(section.id)?.push(section.project ? section.project(movie) : movie);
     }
     if (!claimed) main.push(movie);
   }

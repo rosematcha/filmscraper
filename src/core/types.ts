@@ -121,6 +121,8 @@ export interface AggregatedMovie {
    * name only the park.
    */
   readonly freeVenues: readonly string[];
+  /** The dates those free screenings fall on, ascending. */
+  readonly freeDates: readonly IsoDate[];
   /** Every distinct date it screens on, ascending. */
   readonly dates: readonly IsoDate[];
   /** Noteworthy format label -> the theaters carrying that format. */

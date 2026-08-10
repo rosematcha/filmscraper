@@ -61,8 +61,9 @@ interface Accumulator {
   /** Operator id -> the href that sells its tickets, for cross-chain merges. */
   chainHrefs: Map<string, string>;
   theaters: Set<string>;
-  /** Venues whose listing named the screening as free. */
+  /** Venues whose listing named the screening as free, and the dates they fall on. */
   freeVenues: Set<string>;
+  freeDates: Set<IsoDate>;
   dates: Set<IsoDate>;
   formats: Map<string, Set<string>>;
   optional: Map<string, Set<string>>;
@@ -88,6 +89,7 @@ function blank(key: string, title: string, href: string): Accumulator {
     chainHrefs: new Map(),
     theaters: new Set(),
     freeVenues: new Set(),
+    freeDates: new Set(),
     dates: new Set(),
     formats: new Map(),
     optional: new Map(),
@@ -141,7 +143,10 @@ export function aggregate(
         acc.chainHrefs.set(chain, listing.href);
       }
       acc.theaters.add(day.theater.name);
-      if (listing.admission === 'free') acc.freeVenues.add(day.theater.name);
+      if (listing.admission === 'free') {
+        acc.freeVenues.add(day.theater.name);
+        acc.freeDates.add(day.date);
+      }
       acc.dates.add(day.date);
       acc.sources.add(day.sourceId ?? 'fandango');
 
@@ -252,6 +257,7 @@ function mergeAccumulators(
     }
     for (const t of acc.theaters) target.theaters.add(t);
     for (const t of acc.freeVenues) target.freeVenues.add(t);
+    for (const d of acc.freeDates) target.freeDates.add(d);
     for (const d of acc.dates) target.dates.add(d);
     for (const [label, set] of acc.formats) for (const t of set) addTo(target.formats, label, t);
     for (const [label, set] of acc.optional) for (const t of set) addTo(target.optional, label, t);
@@ -285,6 +291,7 @@ function mergeAccumulators(
       ticketLinks,
       theaters: [...acc.theaters].sort(byDistance),
       freeVenues: [...acc.freeVenues].sort(byDistance),
+      freeDates: [...acc.freeDates].sort(),
       dates,
       formats: new Map([...acc.formats].map(([k, v]) => [k, [...v].sort(byDistance)])),
       optional: new Map([...acc.optional].map(([k, v]) => [k, [...v].sort(byDistance)])),

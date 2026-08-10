@@ -164,6 +164,7 @@ describe('isSpecialEvent', () => {
     href: '/x',
     theaters: ['a'],
     freeVenues: [],
+    freeDates: [],
     dates: ['2026-08-04'],
     formats: new Map(),
     optional: new Map(),
@@ -258,6 +259,7 @@ describe('open-caption table', () => {
     href: `/${title}`,
     theaters: ['Regal'],
     freeVenues: [],
+    freeDates: [],
     dates: ['2026-08-04', '2026-08-05'],
     formats: new Map(),
     optional: oc ? new Map([['Open caption', ['Regal']]]) : new Map(),
@@ -346,6 +348,7 @@ describe('highlight tables', () => {
     href: `/${title}`,
     theaters: ['Palladium'],
     freeVenues: [],
+    freeDates: [],
     dates,
     formats: new Map(),
     optional: new Map(),
@@ -393,10 +396,13 @@ describe('highlight tables', () => {
     const mixed = film('A Minecraft Movie', week, {
       theaters: ['Palladium', 'Mission Marquee Plaza'],
       freeVenues: ['Mission Marquee Plaza'],
+      freeDates: ['2026-08-05'],
     });
     const sections = buildSections([mixed], only('free'), window);
     const entry = sections.find((s) => s.id === 'free')?.movies[0];
     expect(entry?.theaters).toEqual(['Mission Marquee Plaza']);
+    // Narrowed on both axes: the free night is one date, not the paid week.
+    expect(entry?.dates).toEqual(['2026-08-05']);
     // It still plays for money at the multiplex, so it keeps its main-table row.
     expect(titles(sections, 'main')).toEqual(['A Minecraft Movie']);
   });
@@ -408,6 +414,22 @@ describe('highlight tables', () => {
 });
 
 describe('claimed rows', () => {
+  it('keeps a venue table filled even when the events table would claim its films', () => {
+    // Library screenings are nearly all undated catalogue titles, so every one
+    // of them is a "special event" too. Letting that table claim them first
+    // left the library table permanently empty.
+    const sections = buildSections(
+      agg([day('sapl', 'Old Library Film', [group([])])]),
+      { ...DEFAULT_SECTION_OPTIONS, currentYear: 2026 },
+    );
+    expect(sections.find((s) => s.id === 'library')?.movies.map((m) => m.title)).toEqual([
+      'Old Library Film',
+    ]);
+    // And it is still out of the main table, since it plays nowhere else.
+    expect(sections.find((s) => s.id === 'main')?.movies).toEqual([]);
+    expect(sections.find((s) => s.id === 'events')).toBeUndefined();
+  });
+
   it('lists a film in one partition even when it qualifies for two', () => {
     // An Arabic-language revival is both foreign and a special screening; it is
     // listed once, under whichever table comes first in the registry.
@@ -417,6 +439,7 @@ describe('claimed rows', () => {
       href: '/x',
       theaters: ['Alamo Quarry'],
       freeVenues: [],
+    freeDates: [],
       dates: ['2026-08-04'],
       formats: new Map(),
       optional: new Map(),

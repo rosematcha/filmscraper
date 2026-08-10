@@ -12,7 +12,6 @@ import { runPipeline, todayIn } from './core/pipeline.js';
 import {
   DEFAULT_TABLE_IDS,
   knownTables,
-  SECTIONS,
   unfilteredSources,
   type SectionOptions,
 } from './core/sections.js';
@@ -111,19 +110,6 @@ app.use('/api/*', cors());
 app.get('/api/health', (c) => c.json({ ok: true, timezone: TIMEZONE }));
 
 app.get('/api/sources', (c) => c.json({ sources: SOURCES }));
-
-/** The tables the build supports, so the checklist is never out of date. */
-app.get('/api/tables', (c) =>
-  c.json({
-    tables: SECTIONS.map(({ id, label, hint, mode, defaultOn }) => ({
-      id,
-      label,
-      hint,
-      mode,
-      defaultOn,
-    })),
-  }),
-);
 
 /**
  * Scrape and stream progress.
