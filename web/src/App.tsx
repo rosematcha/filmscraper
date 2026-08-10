@@ -11,6 +11,7 @@ import { geocodeAnchor } from './geocode';
 import { chainIds, chainLabel } from '@core/core/chains.js';
 import type { Coords } from '@core/core/geo.js';
 import { DEFAULT_SECTION_OPTIONS } from '@core/core/sections.js';
+import { SECTIONS, useTablePrefs } from './tables';
 import { describeSchedule } from '@core/core/schedule.js';
 
 /**
@@ -121,11 +122,7 @@ export default function App(): React.JSX.Element {
   const [sources, setSources] = useState<SourceInfo[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
   const [concurrency, setConcurrency] = useState(2);
-  const [separateDriveIn, setSeparateDriveIn] = useState(true);
-  const [separateLibrary, setSeparateLibrary] = useState(true);
-  const [separateEvents, setSeparateEvents] = useState(true);
-  const [separateOpenCaptions, setSeparateOpenCaptions] = useState(false);
-  const [foreign, setForeign] = useState<'inline' | 'separate' | 'exclude'>('separate');
+  const { tables, excludeForeign, setTable, setExcludeForeign } = useTablePrefs();
   const [showOptions, setShowOptions] = useState(false);
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [liveAvailable, setLiveAvailable] = useState(false);
@@ -227,11 +224,8 @@ export default function App(): React.JSX.Element {
           keepYears,
           sources: chosen,
           concurrency,
-          separateDriveIn,
-          separateLibrary,
-          separateEvents,
-          separateOpenCaptions,
-          foreign,
+          tables,
+          excludeForeign,
           excludeChains: excludedChains,
           anchor: anchorText.trim() === '' ? null : anchorText.trim(),
         },
@@ -274,11 +268,8 @@ export default function App(): React.JSX.Element {
       keepYears,
       chosen,
       concurrency,
-      separateDriveIn,
-      separateLibrary,
-      separateEvents,
-      separateOpenCaptions,
-      foreign,
+      tables,
+      excludeForeign,
       excludedChains,
       anchorText,
     ],
@@ -295,11 +286,8 @@ export default function App(): React.JSX.Element {
         { keepYears, showAccessibility: false, showLanguage: false },
         {
           ...DEFAULT_SECTION_OPTIONS,
-          separateDriveIn,
-          separateLibrary,
-          separateEvents,
-          separateOpenCaptions,
-          foreign,
+          tables,
+          excludeForeign,
           currentYear: Number(from.slice(0, 4)),
         },
         ALIASES,
@@ -313,11 +301,8 @@ export default function App(): React.JSX.Element {
     to,
     effectiveRadius,
     keepYears,
-    separateDriveIn,
-    separateLibrary,
-    separateEvents,
-    separateOpenCaptions,
-    foreign,
+    tables,
+    excludeForeign,
     excludedChains,
     anchor,
   ]);
@@ -511,61 +496,33 @@ export default function App(): React.JSX.Element {
               </div>
             </div>
 
+            {/* One checklist, built from the same registry the renderer reads,
+                so a table added to the build cannot go missing here. Choices
+                are remembered between visits. */}
             <div className="optgroup">
               <span className="optgroup__title">Tables</span>
               <div className="optgroup__items">
-                <label>
+                {SECTIONS.map((section) => (
+                  <label key={section.id} title={section.hint}>
+                    <input
+                      type="checkbox"
+                      checked={tables.includes(section.id)}
+                      onChange={(e) => {
+                        setTable(section.id, e.target.checked);
+                      }}
+                    />
+                    {section.label}
+                  </label>
+                ))}
+                <label title="Leave non-English releases out of the output entirely">
                   <input
                     type="checkbox"
-                    checked={separateDriveIn}
+                    checked={excludeForeign}
                     onChange={(e) => {
-                      setSeparateDriveIn(e.target.checked);
+                      setExcludeForeign(e.target.checked);
                     }}
                   />
-                  drive-in table
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={separateLibrary}
-                    onChange={(e) => {
-                      setSeparateLibrary(e.target.checked);
-                    }}
-                  />
-                  library table
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={separateEvents}
-                    onChange={(e) => {
-                      setSeparateEvents(e.target.checked);
-                    }}
-                  />
-                  events table
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={separateOpenCaptions}
-                    onChange={(e) => {
-                      setSeparateOpenCaptions(e.target.checked);
-                    }}
-                  />
-                  open captions table
-                </label>
-                <label className="inline-number">
-                  not in English
-                  <select
-                    value={foreign}
-                    onChange={(e) => {
-                      setForeign(e.target.value as 'inline' | 'separate' | 'exclude');
-                    }}
-                  >
-                    <option value="separate">own table</option>
-                    <option value="inline">inline</option>
-                    <option value="exclude">exclude</option>
-                  </select>
+                  drop non-English
                 </label>
               </div>
             </div>

@@ -20,11 +20,9 @@ export interface ScrapeParams {
   keepYears: boolean;
   sources: string[];
   concurrency: number;
-  separateDriveIn: boolean;
-  separateLibrary: boolean;
-  separateEvents: boolean;
-  separateOpenCaptions: boolean;
-  foreign: 'inline' | 'separate' | 'exclude';
+  /** Ids of the tables to build; see the section registry. */
+  tables: string[];
+  excludeForeign: boolean;
   excludeChains: string[];
   /** Free-text address; the server geocodes it and measures the radius from it. */
   anchor: string | null;
