@@ -53,14 +53,21 @@ export class DiskCache {
   /**
    * Read through the cache, computing and storing on a miss.
    *
-   * A cached `null` is a real answer — "we looked and there were no
-   * coordinates" — so it is stored and returned rather than retried each run.
+   * A `null` is never stored. Everything cached here — a ZIP centroid, a
+   * theater's coordinates — exists; `null` means the lookup failed, and a
+   * failure written to a cache that never expires drops that venue from every
+   * run afterwards. Retrying costs one request against a host that answers in
+   * milliseconds, so the cheap error is the one worth making.
    */
-  async wrap<T>(key: string, compute: () => Promise<T>, maxAgeMs = Infinity): Promise<T> {
+  async wrap<T>(
+    key: string,
+    compute: () => Promise<T | null>,
+    maxAgeMs = Infinity,
+  ): Promise<T | null> {
     const hit = await this.read(key, maxAgeMs);
     if (hit) return hit.value as T;
     const value = await compute();
-    await this.write(key, value);
+    if (value !== null) await this.write(key, value);
     return value;
   }
 }
