@@ -42,6 +42,8 @@ export const SCHEDULES: Readonly<Record<string, readonly ScheduleRule[]>> = {
   'tobin-cinema': [{ days: [SUNDAY], hours: [18] }],
   // The museum screens a film every month or two; a weekly look is generous.
   mcnay: [{ days: [SUNDAY], hours: [18] }],
+  // Two screenings in the museum's history, so weekly is already optimistic.
+  'ruby-city': [{ days: [SUNDAY], hours: [18] }],
   // Twice a week: the drive-in posts its week, the library its programme.
   'stars-and-stripes': [{ days: [SUNDAY, THURSDAY], hours: [18] }],
   sapl: [{ days: [SUNDAY, THURSDAY], hours: [18] }],

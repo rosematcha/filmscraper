@@ -30,7 +30,7 @@ describe('dueSources', () => {
   });
 
   it('runs the venue calendars weekly on Sunday only', () => {
-    const weekly = ['slab-arthouse', 'slab-outdoor', 'mission-marquee', 'tobin-cinema', 'mcnay'];
+    const weekly = ['slab-arthouse', 'slab-outdoor', 'mission-marquee', 'tobin-cinema', 'mcnay', 'ruby-city'];
     expect(dueSources(at(0, 18))).toEqual(expect.arrayContaining(weekly));
     for (const day of [1, 2, 3, 4, 5, 6]) {
       for (const id of weekly) {

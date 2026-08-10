@@ -40,6 +40,7 @@ export const CHAINS: readonly Chain[] = [
   { id: 'library', label: 'San Antonio Public Library', pattern: /\blibrary\b/ },
   { id: 'tobin-center', label: 'Tobin Center', pattern: /\btobin\b|\bwill naylor smith\b/ },
   { id: 'mcnay', label: 'McNay Art Museum', pattern: /\bmcnay\b/ },
+  { id: 'ruby-city', label: 'Ruby City', pattern: /\bruby city\b|\bchris park\b/ },
 ];
 
 /**
@@ -57,6 +58,7 @@ const SOURCE_CHAINS: Readonly<Record<string, string>> = {
   'mission-marquee': 'slab',
   'tobin-cinema': 'tobin-center',
   mcnay: 'mcnay',
+  'ruby-city': 'ruby-city',
 };
 
 /** Venues no rule claims. Not offered as a filter; nothing has landed here yet. */

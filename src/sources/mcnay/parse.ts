@@ -45,7 +45,8 @@ const SERIES_LABEL =
 const SESSION_QUALIFIER =
   /^((mon|tues|wednes|thurs|fri|satur|sun)day|weekend)?\s*(morning|afternoon|evening|matinee|night|session \d+|part \d+)$/i;
 
-const PLACEHOLDER = /^(film (screening|series)|screening|tbd|tba|to be announced)$/i;
+const PLACEHOLDER =
+  /^(films?|movies?|screenings?|film (screening|series)|film series|get reel|tbd|tba|to be announced)$/i;
 
 const MONTHS: Readonly<Record<string, string>> = {
   january: '01',

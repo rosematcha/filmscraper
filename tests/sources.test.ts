@@ -16,10 +16,18 @@ import {
   parseMcnayTime,
 } from '../src/sources/mcnay/parse.js';
 import {
+  filmFromRubyCityTitle,
+  isRubyCityFilmEvent,
+  parseRubyCityDate,
+  parseRubyCityEvents,
+  parseRubyCityTime,
+} from '../src/sources/rubyCity/parse.js';
+import {
   filmFromTobinTitle,
   parseTobinCinemaEvents,
   parseTobinDate,
 } from '../src/sources/tobinCenter/parse.js';
+import { RubyCitySource } from '../src/sources/rubyCity/index.js';
 import { DriveInSource } from '../src/sources/driveIn/index.js';
 import type { SourceRequest } from '../src/sources/source.js';
 
@@ -496,5 +504,196 @@ describe('McNay title extraction', () => {
   it('skips an entry that names no film', () => {
     expect(filmFromMcnayTitle('Film Screening')).toBeNull();
     expect(filmFromMcnayTitle('Film Screening: TBA')).toBeNull();
+  });
+});
+
+describe('Ruby City events page', () => {
+  /** Elementor's loop card: a stack of unlabelled headings under the post id. */
+  const card = (postId: string, headings: readonly string[]) =>
+    `<div data-elementor-type="loop-item" data-elementor-id="113" class="elementor e-loop-item post-${postId} event type-event">${headings
+      .map((h) => `<div class="elementor-heading-title elementor-size-default">${h}</div>`)
+      .join('')}</div>`;
+
+  const html = [
+    card('1906', ['MONTHLY MEDITATION', 'SUN', '08.16.2026', '9—10AM', 'CHRIS PARK']),
+    card('2007', [
+      'THEYDREAM FILM SCREENING + FILMMAKER TALK WITH WILLIAM D. CABALLERO',
+      'FRI',
+      '09.18.2026',
+      '8:30—10:00PM',
+      'CHRIS PARK',
+    ]),
+    // Past events render through a second template that carries a title only.
+    card('1834', ['ASCO: WITHOUT PERMISSION FILM SCREENING']),
+  ].join('\n');
+
+  it('reads the upcoming cards and skips the ones with no date', () => {
+    const events = parseRubyCityEvents(html);
+    expect(events).toHaveLength(2);
+    expect(events[1]).toEqual({
+      title: 'THEYDREAM FILM SCREENING + FILMMAKER TALK WITH WILLIAM D. CABALLERO',
+      postId: '2007',
+      date: '2026-09-18',
+      time: '8:30p',
+      place: 'CHRIS PARK',
+    });
+  });
+
+  it('keeps the rest of the museum programme out', () => {
+    const films = parseRubyCityEvents(html).filter((e) => isRubyCityFilmEvent(e.title));
+    expect(films.map((e) => e.postId)).toEqual(['2007']);
+  });
+
+  it('reads the date the museum writes with dots', () => {
+    expect(parseRubyCityDate('08.16.2026')).toBe('2026-08-16');
+    expect(parseRubyCityDate('9.7.2026')).toBe('2026-09-07');
+    expect(parseRubyCityDate('16.16.2026')).toBeNull();
+  });
+
+  it('borrows the half of the day from whichever end of the range carries it', () => {
+    expect(parseRubyCityTime('9—10AM')).toBe('9:00a');
+    expect(parseRubyCityTime('2PM—5PM')).toBe('2:00p');
+    expect(parseRubyCityTime('11:00AM—12:30PM')).toBe('11:00a');
+    expect(parseRubyCityTime('8:30–10:00PM')).toBe('8:30p');
+    expect(parseRubyCityTime('8PM')).toBe('8:00p');
+    expect(parseRubyCityTime('')).toBe('');
+  });
+});
+
+describe('Ruby City title extraction', () => {
+  it('takes what is being shown from in front of the label', () => {
+    expect(filmFromRubyCityTitle('ASCO: WITHOUT PERMISSION FILM SCREENING')).toBe(
+      'ASCO: WITHOUT PERMISSION',
+    );
+    expect(
+      filmFromRubyCityTitle('THEYDREAM FILM SCREENING + FILMMAKER TALK WITH WILLIAM D. CABALLERO'),
+    ).toBe('THEYDREAM');
+  });
+
+  it('reads a title that puts the film after the label instead', () => {
+    expect(filmFromRubyCityTitle('FILM SCREENING: THE WALKOUT')).toBe('THE WALKOUT');
+    expect(filmFromRubyCityTitle('SCREENING — PARIS IS BURNING + DISCUSSION')).toBe(
+      'PARIS IS BURNING',
+    );
+  });
+
+  it('skips an entry that names no film', () => {
+    expect(filmFromRubyCityTitle('FILM SCREENING')).toBeNull();
+    expect(filmFromRubyCityTitle('FILM SCREENING: TBA')).toBeNull();
+  });
+});
+
+describe('Ruby City harvest', () => {
+  const request: SourceRequest = { zip: '78205', dates: ['2026-09-18'], radiusMiles: 35 };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubSite(eventsHtml: string): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string, init?: { method?: string }) => {
+        if (input.includes('zippopotam')) {
+          return Promise.resolve(
+            Response.json({ places: [{ latitude: '29.42', longitude: '-98.49' }] }),
+          );
+        }
+        if (init?.method === 'HEAD') {
+          const response = new Response(null);
+          Object.defineProperty(response, 'url', {
+            value: 'https://rubycity.org/events/theydream-film-screening/',
+          });
+          return Promise.resolve(response);
+        }
+        return Promise.resolve(new Response(eventsHtml));
+      }),
+    );
+  }
+
+  const card = (postId: string, headings: readonly string[]) =>
+    `<div data-elementor-type="loop-item" class="elementor e-loop-item post-${postId} event type-event">${headings
+      .map((h) => `<div class="elementor-heading-title elementor-size-default">${h}</div>`)
+      .join('')}</div>`;
+
+  it('publishes a screening under the permalink the card does not carry', async () => {
+    stubSite(
+      [
+        card('1906', ['MONTHLY MEDITATION', 'SUN', '09.20.2026', '9—10AM', 'CHRIS PARK']),
+        card('2007', [
+          'THEYDREAM FILM SCREENING + FILMMAKER TALK',
+          'FRI',
+          '09.18.2026',
+          '8:30—10:00PM',
+          'CHRIS PARK',
+        ]),
+      ].join('\n'),
+    );
+
+    const result = await new RubyCitySource().harvest(request);
+
+    expect(result.warnings).toEqual([]);
+    expect(result.days).toHaveLength(1);
+    expect(result.days[0]?.theater.name).toBe('Chris Park at Ruby City');
+    expect(result.days[0]?.movies[0]?.title).toBe('THEYDREAM');
+    expect(result.days[0]?.movies[0]?.href).toBe(
+      'https://rubycity.org/events/theydream-film-screening/',
+    );
+    expect(result.days[0]?.movies[0]?.groups[0]?.showtimes[0]?.time).toBe('8:30p');
+  });
+
+  it('warns when the page parses to nothing, since a quiet museum still has events', async () => {
+    stubSite('<div>Elementor rebuilt the loop</div>');
+
+    const result = await new RubyCitySource().harvest(request);
+
+    expect(result.days).toEqual([]);
+    expect(result.warnings[0]?.message).toContain('nothing this parser could read');
+  });
+});
+
+describe('Ruby City title edge cases', () => {
+  it('refuses a title that bills a talk after the screening and no film', () => {
+    expect(filmFromRubyCityTitle('FILM SCREENING + ARTIST TALK')).toBeNull();
+    expect(filmFromRubyCityTitle('FILM SCREENING (TBA)')).toBeNull();
+  });
+
+  it('keeps a film whose own name ends in the word film', () => {
+    expect(filmFromRubyCityTitle('THE STORY OF FILM: AN ODYSSEY')).toBe(
+      'THE STORY OF FILM: AN ODYSSEY',
+    );
+  });
+
+  it('reads the labels the museum has not used yet', () => {
+    expect(filmFromRubyCityTitle('OUTDOOR CINEMA: THE WALKOUT')).toBe('THE WALKOUT');
+    expect(filmFromRubyCityTitle('FILMS AT RUBY CITY: THE WALKOUT')).toBe('THE WALKOUT');
+  });
+
+  it('refuses a range with no half of the day on either end', () => {
+    expect(parseRubyCityTime('9—10')).toBe('');
+  });
+
+  it('keeps the place when a card names no time', () => {
+    const card = `<div data-elementor-type="loop-item" class="elementor e-loop-item post-42 event">${[
+      'THEYDREAM FILM SCREENING',
+      'FRI',
+      '09.18.2026',
+      'RUBY CITY',
+    ]
+      .map((h) => `<div class="elementor-heading-title elementor-size-default">${h}</div>`)
+      .join('')}</div>`;
+    expect(parseRubyCityEvents(card)[0]).toMatchObject({ time: '', place: 'RUBY CITY' });
+  });
+
+  it('ignores a date the page prints below the last card', () => {
+    const card = `<div data-elementor-type="loop-item" class="elementor e-loop-item post-189 event">${[
+      'ESTAFIATE, A PERFORMANCE BY TELETEXTILE',
+    ]
+      .map((h) => `<div class="elementor-heading-title elementor-size-default">${h}</div>`)
+      .join('')}</div>
+      <footer>${['Opening soon', 'Newsletter', 'Since', '09.18.2026']
+        .map((h) => `<div class="elementor-heading-title elementor-size-default">${h}</div>`)
+        .join('')}</footer>`;
+    expect(parseRubyCityEvents(card)).toEqual([]);
   });
 });

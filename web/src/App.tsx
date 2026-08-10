@@ -24,6 +24,7 @@ const SOURCE_LABELS: Record<string, string> = {
   'mission-marquee': 'Mission Marquee Plaza',
   'tobin-cinema': 'Tobin Center Cinema',
   mcnay: 'McNay Art Museum',
+  'ruby-city': 'Ruby City',
   'stars-and-stripes': 'Stars & Stripes Drive-In',
   sapl: 'San Antonio Public Library',
 };

@@ -46,6 +46,7 @@ describe('chainOf', () => {
     expect(chainOf('Mission Marquee Plaza', 'mission-marquee')).toBe('slab');
     expect(chainOf('Will Naylor Smith River Walk Plaza', 'tobin-cinema')).toBe('tobin-center');
     expect(chainOf('McNay Art Museum', 'mcnay')).toBe('mcnay');
+    expect(chainOf('Chris Park at Ruby City', 'ruby-city')).toBe('ruby-city');
     expect(chainOf('Arthouse at Blue Star', 'slab-arthouse')).toBe('slab');
     expect(chainOf('Stars & Stripes Drive-In', 'stars-and-stripes')).toBe('stars-and-stripes');
   });
