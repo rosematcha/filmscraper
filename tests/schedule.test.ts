@@ -30,7 +30,14 @@ describe('dueSources', () => {
   });
 
   it('runs the venue calendars weekly on Sunday only', () => {
-    const weekly = ['slab-arthouse', 'slab-outdoor', 'mission-marquee', 'tobin-cinema', 'mcnay', 'ruby-city'];
+    const weekly = [
+      'slab-arthouse',
+      'slab-outdoor',
+      'mission-marquee',
+      'tobin-cinema',
+      'mcnay',
+      'ruby-city',
+    ];
     expect(dueSources(at(0, 18))).toEqual(expect.arrayContaining(weekly));
     for (const day of [1, 2, 3, 4, 5, 6]) {
       for (const id of weekly) {
@@ -86,7 +93,11 @@ const base = (over: Partial<Dataset> = {}): Dataset => ({
   knownFrom: '2026-08-01',
   // Dates inside the window the next run will use, so only the source that
   // re-ran is replaced rather than everything ageing out.
-  days: [day(undefined, '2026-08-01'), day('sapl', '2026-08-05'), day('slab-arthouse', '2026-08-06')],
+  days: [
+    day(undefined, '2026-08-01'),
+    day('sapl', '2026-08-05'),
+    day('slab-arthouse', '2026-08-06'),
+  ],
   warnings: [],
   sources: {},
   ...over,
@@ -139,7 +150,9 @@ describe('mergeDataset', () => {
 
   it('preserves earlier stamps across runs', () => {
     const withStamp = base({
-      sources: { sapl: { updatedAt: '2026-08-01T18:00:00.000Z', from: '2026-08-01', to: '2026-08-31' } },
+      sources: {
+        sapl: { updatedAt: '2026-08-01T18:00:00.000Z', from: '2026-08-01', to: '2026-08-31' },
+      },
     });
     const merged = mergeDataset(withStamp, fresh, now);
     expect(merged.sources['sapl']?.updatedAt).toBe('2026-08-01T18:00:00.000Z');
@@ -151,6 +164,35 @@ describe('mergeDataset', () => {
     const merged = mergeDataset(base({ radiusMiles: 15 }), fresh, now);
     expect(merged.days).toHaveLength(1);
     expect(merged.sources['sapl']).toBeUndefined();
+  });
+
+  it('takes the horizon from a run that measured it', () => {
+    const merged = mergeDataset(base(), fresh, now);
+    expect(merged.horizon).toBe('2026-08-10');
+    expect(merged.knownFrom).toBe('2026-08-03');
+  });
+
+  it('keeps the carried horizon when Fandango did not run', () => {
+    // A library-only run finds no posting boundary and so reports the end of
+    // its window. Believing that would claim the multiplexes have posted a
+    // month ahead, and every unposted Friday would read as a run ending.
+    const libraryOnly = { ...fresh, sourceIds: ['sapl'], horizon: '2026-09-02' };
+    const merged = mergeDataset(base(), libraryOnly, now);
+    expect(merged.horizon).toBe('2026-08-08');
+  });
+
+  it('does not resurrect a horizon from before the window', () => {
+    const libraryOnly = { ...fresh, sourceIds: ['sapl'], horizon: '2026-09-02' };
+    const merged = mergeDataset(base({ horizon: '2026-07-20' }), libraryOnly, now);
+    expect(merged.horizon).toBe('2026-08-03');
+  });
+
+  it('keeps the later first-reliable date when Fandango did not run', () => {
+    // Today is thinned by showtimes that have already started; a partial run
+    // that cannot see that must not widen what counts as known.
+    const libraryOnly = { ...fresh, sourceIds: ['sapl'] };
+    const merged = mergeDataset(base({ knownFrom: '2026-08-04' }), libraryOnly, now);
+    expect(merged.knownFrom).toBe('2026-08-04');
   });
 
   it('handles having no previous dataset at all', () => {

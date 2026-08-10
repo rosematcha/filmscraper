@@ -63,12 +63,15 @@ export function isDataset(value: unknown): value is Dataset {
   );
 }
 
-/**
- * Narrow a dataset to a tighter radius and date window.
- *
- * Venues from sources that ignore the radius keep their exemption, which is why
- * the drive-in and the library survive a filter down to five miles.
- */
+/** ISO dates sort lexically, so the earlier of two is the smaller string. */
+function minDate(a: IsoDate, b: IsoDate): IsoDate {
+  return a < b ? a : b;
+}
+
+function maxDate(a: IsoDate, b: IsoDate): IsoDate {
+  return a > b ? a : b;
+}
+
 /**
  * Fold a partial scrape into the previous dataset.
  *
@@ -103,8 +106,28 @@ export function mergeDataset(
     previous.version === DATASET_VERSION;
 
   const carried = compatible
-    ? previous.days.filter((d) => !scraped.has(sourceOf(d)) && d.date >= fresh.from && d.date <= fresh.to)
+    ? previous.days.filter(
+        (d) => !scraped.has(sourceOf(d)) && d.date >= fresh.from && d.date <= fresh.to,
+      )
     : [];
+
+  // The posting boundary is measured on Fandango and nothing else, so a run
+  // without it reports the end of the window — no boundary found. Writing that
+  // over the carried multiplex days would state as fact that every date is
+  // fully posted, and a wide release that has not put Friday on sale yet would
+  // read as "through Thursday". Keep whichever pair claims less: the earlier
+  // horizon, the later first-reliable date.
+  const measuresHorizon = fresh.sourceIds.includes('fandango');
+  const clamp = (date: IsoDate): IsoDate =>
+    date < fresh.from ? fresh.from : date > fresh.to ? fresh.to : date;
+  const horizon =
+    compatible && !measuresHorizon
+      ? minDate(fresh.horizon, clamp(previous.horizon))
+      : fresh.horizon;
+  const knownFrom =
+    compatible && !measuresHorizon
+      ? maxDate(fresh.knownFrom, clamp(previous.knownFrom))
+      : fresh.knownFrom;
 
   const stamps: Record<string, SourceStamp> = compatible ? { ...previous.sources } : {};
   const stamp: SourceStamp = { updatedAt: now.toISOString(), from: fresh.from, to: fresh.to };
@@ -122,14 +145,20 @@ export function mergeDataset(
     from: fresh.from,
     to: fresh.to,
     radiusMiles: fresh.radiusMiles,
-    horizon: fresh.horizon,
-    knownFrom: fresh.knownFrom,
+    horizon,
+    knownFrom,
     days: [...carried, ...fresh.days],
     warnings: [...fresh.warnings, ...carriedWarnings.filter((w) => w.kind !== 'expired-today')],
     sources: stamps,
   };
 }
 
+/**
+ * Narrow a dataset to a tighter radius and date window.
+ *
+ * Venues from sources that ignore the radius keep their exemption, which is why
+ * the drive-in and the library survive a filter down to five miles.
+ */
 export function filterDataset(
   dataset: Dataset,
   from: IsoDate,
