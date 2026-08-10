@@ -12,6 +12,7 @@ import { chainIds, chainLabel } from '@core/core/chains.js';
 import type { Coords } from '@core/core/geo.js';
 import { DEFAULT_SECTION_OPTIONS } from '@core/core/sections.js';
 import { SECTIONS, useTablePrefs } from './tables';
+import Subscribe from './Subscribe';
 import { describeSchedule } from '@core/core/schedule.js';
 
 /**
@@ -736,6 +737,8 @@ export default function App(): React.JSX.Element {
           )}
         </>
       )}
+
+      <Subscribe defaultTables={tables} />
     </main>
   );
 }

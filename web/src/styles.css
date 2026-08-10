@@ -531,3 +531,23 @@ pre {
   color: var(--muted);
   border-bottom: 1px solid var(--rule);
 }
+
+/* --- email signup --- */
+
+/* Sits below the table at the same volume as the freshness block: present for
+   whoever wants it, silent for whoever is here to read listings. */
+.subscribe {
+  margin-top: 3rem;
+}
+
+.subscribe__form {
+  margin-top: 0.75rem;
+}
+
+.subscribe__note {
+  flex-basis: 100%;
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  max-width: 62ch;
+}
