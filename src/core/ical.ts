@@ -2,6 +2,8 @@ export interface IcalEvent {
   readonly summary: string;
   readonly url: string;
   readonly location: string;
+  /** Free-text body, where a feed says what a screening costs. */
+  readonly description: string;
   /** Raw `DTSTART` value, e.g. `20260803T204000`. */
   readonly start: string;
   /** IANA zone from `TZID`, when the feed supplies one. */
@@ -44,6 +46,7 @@ export function parseIcal(text: string): IcalEvent[] {
           summary: unescapeText(current['SUMMARY'] ?? ''),
           url: current['URL'] ?? '',
           location: unescapeText(current['LOCATION'] ?? ''),
+          description: unescapeText(current['DESCRIPTION'] ?? ''),
           start: current['DTSTART'],
           timeZone: currentTz,
         });

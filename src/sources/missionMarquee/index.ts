@@ -1,3 +1,4 @@
+import { detectAdmission, firstKnown, textOf } from '../../core/admission.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { browserHeaders } from '../../net/headers.js';
@@ -50,6 +51,7 @@ export class MissionMarqueeSource implements Source {
       };
     }
 
+    const pageAdmission = detectAdmission(textOf(html));
     const screenings: SimpleScreening[] = [];
     let skipped = 0;
     for (const event of parseMarqueeEvents(html)) {
@@ -66,6 +68,9 @@ export class MissionMarqueeSource implements Source {
         postalCode: MISSION_MARQUEE.postalCode,
         date: event.date,
         time: event.time,
+        // The page carries one series and nothing else, so a statement of
+        // admission anywhere on it is a statement about these screenings.
+        admission: firstKnown(detectAdmission(event.title, event.description), pageAdmission),
       });
     }
 

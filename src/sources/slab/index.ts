@@ -1,3 +1,4 @@
+import { detectAdmission } from '../../core/admission.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { localDate, localTime, toVenueDays, type SimpleScreening } from '../common.js';
 import { filmFromSlabTitle, parseSlabEvents } from './parse.js';
@@ -86,6 +87,9 @@ export class SlabSource implements Source {
         ...(event.coords ? { coords: event.coords } : {}),
         date,
         time: localTime(instant, event.timeZone),
+        // The outdoor calendar says "Free Admission" in the title it also
+        // packs the sponsor into; the arthouse sells tickets and says so.
+        admission: detectAdmission(event.title, event.description),
       });
     }
 

@@ -1,3 +1,4 @@
+import { detectAdmission } from '../../core/admission.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { browserHeaders } from '../../net/headers.js';
@@ -111,6 +112,7 @@ export class RubyCitySource implements Source {
         postalCode: RUBY_CITY.postalCode,
         date: event.date,
         time: event.time,
+        admission: detectAdmission(event.title),
       });
     }
 

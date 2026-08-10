@@ -1,3 +1,4 @@
+import { detectAdmission } from '../../core/admission.js';
 import { postalCodeFrom } from '../../core/geo.js';
 import type { IsoDate } from '../../core/types.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
@@ -122,12 +123,10 @@ export class SaplSource implements Source {
         if (!/movie/i.test(field(event, 'Event Type(s)'))) continue;
 
         considered++;
-        const film = filmFromSaplEvent({
-          title: typeof event.title === 'string' ? event.title : '',
-          description: stripHtml(event.description),
-          additionalInfo: field(event, 'Additional Info'),
-          date: eventDate,
-        });
+        const title = typeof event.title === 'string' ? event.title : '';
+        const description = stripHtml(event.description);
+        const additionalInfo = field(event, 'Additional Info');
+        const film = filmFromSaplEvent({ title, description, additionalInfo, date: eventDate });
         if (!film) {
           skipped++;
           continue;
@@ -150,6 +149,7 @@ export class SaplSource implements Source {
           postalCode,
           date: eventDate,
           time: timeFrom(start),
+          admission: detectAdmission(title, description, additionalInfo, field(event, 'Cost')),
         });
       }
     }

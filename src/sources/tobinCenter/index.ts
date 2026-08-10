@@ -1,3 +1,4 @@
+import { detectAdmission, firstKnown, textOf } from '../../core/admission.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { browserHeaders } from '../../net/headers.js';
@@ -52,6 +53,7 @@ export class TobinCinemaSource implements Source {
       };
     }
 
+    const pageAdmission = detectAdmission(textOf(html));
     const screenings: SimpleScreening[] = [];
     let skipped = 0;
     for (const event of parseTobinCinemaEvents(html)) {
@@ -68,6 +70,9 @@ export class TobinCinemaSource implements Source {
         postalCode: TOBIN_CINEMA.postalCode,
         date: event.date,
         time: TOBIN_CINEMA.defaultTime,
+        // The cinema page describes one series, so its admission line covers
+        // every row on it.
+        admission: firstKnown(detectAdmission(event.title), pageAdmission),
       });
     }
 

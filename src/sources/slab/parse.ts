@@ -7,12 +7,15 @@ export interface WixEvent {
   readonly timeZone: string;
   readonly venueName: string;
   readonly coords: Coords | null;
+  /** The event's own blurb, where the outdoor calendar states admission. */
+  readonly description: string;
 }
 
 const WARMUP = /id="wix-warmup-data"[^>]*>([\s\S]*?)<\/script>/;
 
 interface RawEvent {
   title?: unknown;
+  description?: unknown;
   slug?: unknown;
   status?: unknown;
   location?: { name?: unknown; coordinates?: { lat?: unknown; lng?: unknown } };
@@ -70,6 +73,7 @@ export function parseSlabEvents(html: string): WixEvent[] {
             ? event.scheduling.config.timeZoneId
             : 'America/Chicago',
         venueName: typeof event.location?.name === 'string' ? event.location.name : 'Slab Cinema',
+        description: typeof event.description === 'string' ? event.description : '',
         coords: Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lon: lng } : null,
       });
     }

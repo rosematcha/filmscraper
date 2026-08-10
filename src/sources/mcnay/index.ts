@@ -1,3 +1,4 @@
+import { detectAdmission } from '../../core/admission.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { SCRAPER_USER_AGENT, browserHeaders } from '../../net/headers.js';
@@ -84,6 +85,8 @@ export class McnaySource implements Source {
         postalCode: MCNAY.postalCode,
         date: event.date,
         time: event.time,
+        // The museum stamps `FREE:` or `SOLD OUT:` onto the title itself.
+        admission: detectAdmission(event.title),
       });
     }
 

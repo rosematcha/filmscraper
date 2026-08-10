@@ -134,7 +134,7 @@ describe('Mission Marquee parsing', () => {
     </article>`;
     const events = parseMarqueeEvents(html);
     expect(events).toHaveLength(2);
-    expect(events[0]).toEqual({
+    expect(events[0]).toMatchObject({
       title: 'A Minecraft Movie',
       url: 'https://www.missionmarquee.com/EVENTS/Outdoor-Family-Film-Series/ArtMID/23946/ArticleID/25643/A-Minecraft-Movie',
       date: '2026-08-15',

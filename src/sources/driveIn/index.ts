@@ -1,3 +1,4 @@
+import { detectAdmission } from '../../core/admission.js';
 import { icalDate, icalTime, parseIcal } from '../../core/ical.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
@@ -88,6 +89,7 @@ export class DriveInSource implements Source {
         venueName: this.venue.name,
         postalCode: this.venue.postalCode,
         date,
+        admission: detectAdmission(event.summary, event.description),
         ...(time ? { time } : {}),
       });
     }

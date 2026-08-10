@@ -1,3 +1,4 @@
+import type { Admission } from './admission.js';
 import type { Coords } from './geo.js';
 
 /** An ISO calendar date, `YYYY-MM-DD`. */
@@ -39,6 +40,11 @@ export interface MovieListing {
   /** Site-relative `movie-overview` path, e.g. `/spider-man-…-243819/movie-overview`. */
   readonly href: string;
   readonly groups: readonly ShowtimeGroup[];
+  /**
+   * What the listing says it costs. Absent means unknown, which is what every
+   * Fandango listing is — the grid carries no price.
+   */
+  readonly admission?: Admission;
 }
 
 export interface Theater {
@@ -107,6 +113,14 @@ export interface AggregatedMovie {
   readonly href: string;
   /** Every distinct theater name showing it, sorted by distance then name. */
   readonly theaters: readonly string[];
+  /**
+   * Venues whose listing said the screening is free, sorted like `theaters`.
+   *
+   * A subset rather than a flag: a film can play free in a park on Saturday and
+   * cost sixteen dollars at the multiplex all week, and the free table must
+   * name only the park.
+   */
+  readonly freeVenues: readonly string[];
   /** Every distinct date it screens on, ascending. */
   readonly dates: readonly IsoDate[];
   /** Noteworthy format label -> the theaters carrying that format. */

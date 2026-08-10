@@ -1,3 +1,4 @@
+import { textOf } from '../../core/admission.js';
 import type { IsoDate } from '../../core/types.js';
 
 export interface MarqueeEvent {
@@ -5,6 +6,8 @@ export interface MarqueeEvent {
   readonly url: string;
   readonly date: IsoDate;
   readonly time: string;
+  /** The card's copy as prose, which is where admission is stated. */
+  readonly description: string;
 }
 
 const ARTICLE = /<article class="edn_article[^"]*"[^>]*>([\s\S]*?)<\/article>/gi;
@@ -58,6 +61,7 @@ export function parseMarqueeEvents(html: string): MarqueeEvent[] {
       url: linkMatch[1] ?? '',
       date: when.date,
       time: when.time,
+      description: textOf(article),
     });
   }
   return out;
