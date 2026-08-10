@@ -179,6 +179,7 @@ describe('isSpecialEvent', () => {
     foreign: false,
     releaseYear: 2026,
     mergedHrefs: [],
+    ticketLinks: [],
     ...over,
   });
 
@@ -271,6 +272,7 @@ describe('open-caption table', () => {
     foreign: false,
     releaseYear: 2026,
     mergedHrefs: [],
+    ticketLinks: [],
   });
   const films = [withOc('Captioned', true), withOc('Plain', false)];
 

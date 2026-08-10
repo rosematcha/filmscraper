@@ -89,6 +89,14 @@ export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   keepYears: false,
 };
 
+/** A ticket link attributed to the operator that honours it. */
+export interface TicketLink {
+  /** Operator name, e.g. `AMC`. */
+  readonly label: string;
+  /** The listing's own href, site-relative or absolute as the source gave it. */
+  readonly href: string;
+}
+
 /** One movie aggregated across every theater and date in the window. */
 export interface AggregatedMovie {
   /** Stable key used for merging; derived from the normalized title. */
@@ -125,6 +133,15 @@ export interface AggregatedMovie {
   readonly releaseYear: number | null;
   /** Every Fandango movie href folded into this entry, including merged variants. */
   readonly mergedHrefs: readonly string[];
+  /**
+   * One ticket link per operator, for entries that merged across chains.
+   *
+   * Empty for ordinary films: a single `href` covers them, and every chain
+   * sells the same showtimes through it. It is only populated when the merge
+   * folded genuinely different listings together — the mystery-movie nights,
+   * where Cinemark's page cannot sell an AMC seat.
+   */
+  readonly ticketLinks: readonly TicketLink[];
 }
 
 export interface ScrapeWarning {

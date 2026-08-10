@@ -176,6 +176,7 @@ app.post('/api/scrape', async (c) => {
         rows: renderRows(result, options, aliases.theaterNames, sections).map((row) => ({
           title: row.movie.title,
           url: row.url,
+          links: row.links,
           notes: row.notes,
           theaterCount: row.movie.theaters.length,
           dateCount: row.movie.dates.length,

@@ -25,6 +25,7 @@ function movie(over: Partial<AggregatedMovie> = {}): AggregatedMovie {
     foreign: false,
     releaseYear: 2026,
     mergedHrefs: [],
+    ticketLinks: [],
     ...over,
   };
 }

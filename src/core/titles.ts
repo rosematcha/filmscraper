@@ -1,3 +1,5 @@
+import { isMysteryTitle, MYSTERY_KEY } from './mystery.js';
+
 /** A trailing release year Fandango appends inconsistently, e.g. `"Moana (2026)"`. */
 const TRAILING_YEAR = /\s*\((?:19|20)\d{2}\)\s*$/;
 
@@ -75,6 +77,10 @@ export function displayTitle(title: string, keepYears: boolean): string {
  * punctuation, and ampersand spelling.
  */
 export function mergeKey(title: string): string {
+  // Every chain's unannounced-title night is the same screening under five
+  // marketing names, so it short-circuits the normal title comparison.
+  if (isMysteryTitle(title)) return MYSTERY_KEY;
+
   let key = stripEventTail(stripYear(title.replace(/\s+/g, ' ').trim()));
   // Repeat until stable: entries can stack suffixes, e.g. "… 3D Re-Release".
   for (;;) {

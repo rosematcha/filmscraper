@@ -30,9 +30,16 @@ export interface ScrapeParams {
   anchor: string | null;
 }
 
+export interface ResultLink {
+  label: string;
+  url: string;
+}
+
 export interface ResultRow {
   title: string;
   url: string;
+  /** Per-operator ticket links; empty when `url` covers the whole row. */
+  links: ResultLink[];
   notes: string;
   theaterCount: number;
   dateCount: number;

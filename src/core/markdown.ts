@@ -18,8 +18,9 @@ export function movieUrl(
   windowDates: readonly IsoDate[],
   knownFrom: IsoDate,
   horizon: IsoDate,
+  href: string = movie.href,
 ): string {
-  const base = movie.href.startsWith('http') ? movie.href : `${SITE}${movie.href}`;
+  const base = href.startsWith('http') ? href : `${SITE}${href}`;
   if (movie.dates.length === 0) return base;
   // Only deep-link when the film misses a date we actually have data for;
   // an unposted Friday is not a reason to pin the link to a day.
@@ -31,10 +32,21 @@ export function movieUrl(
   return `${base}${separator}date=${movie.dates[0] ?? ''}`;
 }
 
+/** A rendered ticket link: operator name and the absolute URL to buy from. */
+export interface RenderedLink {
+  readonly label: string;
+  readonly url: string;
+}
+
 export interface SortedMovie {
   readonly movie: AggregatedMovie;
   readonly notes: string;
   readonly url: string;
+  /**
+   * Per-operator links, when one row covers listings that sell separately.
+   * Empty for ordinary films, where `url` is the whole story.
+   */
+  readonly links: readonly RenderedLink[];
   readonly section?: string;
   readonly sectionHeading?: string | null;
 }
@@ -86,7 +98,17 @@ function toRow(
     movie,
     notes: buildNotes(movie, result.dates, result.knownFrom, result.horizon, options, theaterNames),
     url: movieUrl(movie, result.dates, result.knownFrom, result.horizon),
+    links: movie.ticketLinks.map((link) => ({
+      label: link.label,
+      url: movieUrl(movie, result.dates, result.knownFrom, result.horizon, link.href),
+    })),
   };
+}
+
+/** The Link cell: one "Showtimes" link, or a link per operator when they differ. */
+export function linkCell(row: SortedMovie): string {
+  if (row.links.length === 0) return `[Showtimes](${row.url})`;
+  return row.links.map((link) => `[${cell(link.label)}](${link.url})`).join(' · ');
 }
 
 export function renderRows(
@@ -118,7 +140,7 @@ export function renderMarkdown(
     const lines = section.heading ? [`### ${section.heading}`, '', ...HEADER] : [...HEADER];
     for (const movie of sortMovies(section.movies)) {
       const row = toRow(movie, result, options, theaterNames);
-      lines.push(`| ${cell(movie.title)} | [Showtimes](${row.url}) | ${cell(row.notes)} |`);
+      lines.push(`| ${cell(movie.title)} | ${linkCell(row)} | ${cell(row.notes)} |`);
     }
     blocks.push(lines.join('\n'));
   }

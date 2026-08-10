@@ -1,6 +1,15 @@
+import { chainLabel, chainOf, UNKNOWN_CHAIN } from './chains.js';
 import { classifyAmenity, foreignLanguageOf } from './amenities.js';
+import { MYSTERY_KEY, mysteryTitle } from './mystery.js';
 import { displayTitle, extractYear, mergeKey, movieIdFromHref } from './titles.js';
-import type { AggregatedMovie, IsoDate, ShowtimeGroup, Theater, VenueDay } from './types.js';
+import type {
+  AggregatedMovie,
+  IsoDate,
+  ShowtimeGroup,
+  Theater,
+  TicketLink,
+  VenueDay,
+} from './types.js';
 
 export interface AliasConfig {
   /** Groups of Fandango movie ids to fold together regardless of title. */
@@ -49,6 +58,8 @@ interface Accumulator {
   titleWeight: number;
   ids: Set<string>;
   hrefs: Set<string>;
+  /** Operator id -> the href that sells its tickets, for cross-chain merges. */
+  chainHrefs: Map<string, string>;
   theaters: Set<string>;
   dates: Set<IsoDate>;
   formats: Map<string, Set<string>>;
@@ -72,6 +83,7 @@ function blank(key: string, title: string, href: string): Accumulator {
     titleWeight: 0,
     ids: new Set(),
     hrefs: new Set(),
+    chainHrefs: new Map(),
     theaters: new Set(),
     dates: new Set(),
     formats: new Map(),
@@ -121,6 +133,10 @@ export function aggregate(
       const id = movieIdFromHref(listing.href);
       if (id) acc.ids.add(id);
       acc.hrefs.add(listing.href);
+      const chain = chainOf(day.theater.name, day.sourceId);
+      if (chain !== UNKNOWN_CHAIN && !acc.chainHrefs.has(chain)) {
+        acc.chainHrefs.set(chain, listing.href);
+      }
       acc.theaters.add(day.theater.name);
       acc.dates.add(day.date);
       acc.sources.add(day.sourceId ?? 'fandango');
@@ -166,6 +182,19 @@ function splitBarrier(aliases: AliasConfig): (a: Set<string>, b: Set<string>) =>
         // Only a barrier when the two sides sit on different ids of the group.
         ![...a].some((id) => b.has(id)),
     );
+}
+
+/**
+ * One link per operator, ordered by chain label.
+ *
+ * A single chain needs no attribution — the row already says which one — so
+ * the list stays empty until the merge actually spans operators.
+ */
+function mysteryLinks(chainHrefs: ReadonlyMap<string, string>): TicketLink[] {
+  if (chainHrefs.size < 2) return [];
+  return [...chainHrefs]
+    .map(([chain, href]) => ({ label: chainLabel(chain), href }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function mergeAccumulators(
@@ -214,6 +243,9 @@ function mergeAccumulators(
     }
     for (const id of acc.ids) target.ids.add(id);
     for (const href of acc.hrefs) target.hrefs.add(href);
+    for (const [chain, href] of acc.chainHrefs) {
+      if (!target.chainHrefs.has(chain)) target.chainHrefs.set(chain, href);
+    }
     for (const t of acc.theaters) target.theaters.add(t);
     for (const d of acc.dates) target.dates.add(d);
     for (const [label, set] of acc.formats) for (const t of set) addTo(target.formats, label, t);
@@ -232,20 +264,31 @@ function mergeAccumulators(
   const byDistance = (a: string, b: string): number =>
     (distanceByName.get(a) ?? Infinity) - (distanceByName.get(b) ?? Infinity) || a.localeCompare(b);
 
-  return buckets.map((acc) => ({
-    key: acc.key,
-    title: displayTitle(acc.title, keepYears),
-    href: acc.href,
-    theaters: [...acc.theaters].sort(byDistance),
-    dates: [...acc.dates].sort(),
-    formats: new Map([...acc.formats].map(([k, v]) => [k, [...v].sort(byDistance)])),
-    optional: new Map([...acc.optional].map(([k, v]) => [k, [...v].sort(byDistance)])),
-    optionalDates: new Map([...acc.optionalDates].map(([k, v]) => [k, [...v].sort()])),
-    isEvent: acc.isEvent,
-    sources: [...acc.sources].sort(),
-    languages: acc.foreignGroups === acc.totalGroups ? [...acc.languages].sort() : [],
-    foreign: acc.totalGroups > 0 && acc.foreignGroups === acc.totalGroups,
-    releaseYear: acc.years.size > 0 ? Math.min(...acc.years) : null,
-    mergedHrefs: [...acc.hrefs].sort(),
-  }));
+  return buckets.map((acc) => {
+    const dates = [...acc.dates].sort();
+    // Only the mystery nights get per-chain links. Every other cross-chain
+    // merge folds listings that all sell through the same page, and a format
+    // variant merge would otherwise sprout links that mean nothing.
+    const ticketLinks: TicketLink[] =
+      acc.key === MYSTERY_KEY ? mysteryLinks(acc.chainHrefs) : [];
+    const title = acc.key === MYSTERY_KEY ? mysteryTitle(dates) : displayTitle(acc.title, keepYears);
+
+    return {
+      key: acc.key,
+      title,
+      href: ticketLinks[0]?.href ?? acc.href,
+      ticketLinks,
+      theaters: [...acc.theaters].sort(byDistance),
+      dates,
+      formats: new Map([...acc.formats].map(([k, v]) => [k, [...v].sort(byDistance)])),
+      optional: new Map([...acc.optional].map(([k, v]) => [k, [...v].sort(byDistance)])),
+      optionalDates: new Map([...acc.optionalDates].map(([k, v]) => [k, [...v].sort()])),
+      isEvent: acc.isEvent,
+      sources: [...acc.sources].sort(),
+      languages: acc.foreignGroups === acc.totalGroups ? [...acc.languages].sort() : [],
+      foreign: acc.totalGroups > 0 && acc.foreignGroups === acc.totalGroups,
+      releaseYear: acc.years.size > 0 ? Math.min(...acc.years) : null,
+      mergedHrefs: [...acc.hrefs].sort(),
+    };
+  });
 }

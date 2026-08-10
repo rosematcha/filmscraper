@@ -327,6 +327,7 @@ export default function App(): React.JSX.Element {
         rows: fromDataset.rows.map((r) => ({
           title: r.movie.title,
           url: r.url,
+          links: r.links,
           notes: r.notes,
           theaterCount: r.movie.theaters.length,
           dateCount: r.movie.dates.length,
@@ -744,6 +745,15 @@ export default function App(): React.JSX.Element {
                       <a href={row.url} target="_blank" rel="noreferrer">
                         {row.title}
                       </a>
+                      {row.links.length > 0 && (
+                        <span className="title__links">
+                          {row.links.map((link) => (
+                            <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
+                              {link.label}
+                            </a>
+                          ))}
+                        </span>
+                      )}
                     </td>
                     <td className="notes">{row.notes}</td>
                     <td className="reach" tabIndex={0}>

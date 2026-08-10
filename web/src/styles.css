@@ -338,6 +338,20 @@ th:last-child {
   text-underline-offset: 2px;
 }
 
+/* Ticket links for a row that merged several chains' listings of one event. */
+.title__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.6rem;
+  margin-top: 0.15rem;
+  font-size: 0.8em;
+  color: var(--muted);
+}
+
+.title__links a {
+  color: var(--muted);
+}
+
 .notes {
   color: var(--muted);
   font-size: 0.875rem;
