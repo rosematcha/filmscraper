@@ -335,3 +335,102 @@ describe('default section options', () => {
     }
   });
 });
+
+describe('highlight tables', () => {
+  const week = ['2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06', '2026-08-07'];
+  const window = { windowDates: week, knownFrom: '2026-08-03', horizon: '2026-08-07' };
+
+  const film = (title: string, dates: string[], over: Partial<AggregatedMovie> = {}): AggregatedMovie => ({
+    key: title,
+    title,
+    href: `/${title}`,
+    theaters: ['Palladium'],
+    freeVenues: [],
+    dates,
+    formats: new Map(),
+    optional: new Map(),
+    optionalDates: new Map(),
+    isEvent: false,
+    sources: ['fandango'],
+    languages: [],
+    foreign: false,
+    releaseYear: 2026,
+    mergedHrefs: [],
+    ticketLinks: [],
+    ...over,
+  });
+
+  const titles = (sections: ReturnType<typeof buildSections>, id: string): string[] =>
+    sections.find((s) => s.id === id)?.movies.map((m) => m.title) ?? [];
+
+  it('lists a run that ends before the horizon under last chance', () => {
+    const films = [film('Closing', week.slice(0, 3)), film('Staying', week)];
+    const sections = buildSections(films, only('last-chance'), window);
+    expect(titles(sections, 'last-chance')).toEqual(['Closing']);
+  });
+
+  it('leaves the highlighted film in the main table', () => {
+    // The highlights are a second look at rows that are already there; pulling
+    // them out would make the main table stop being the whole list.
+    const sections = buildSections([film('Closing', week.slice(0, 3))], only('last-chance'), window);
+    expect(titles(sections, 'main')).toEqual(['Closing']);
+  });
+
+  it('lists a film that starts partway through under opens', () => {
+    const films = [film('New', week.slice(2)), film('Running', week)];
+    const sections = buildSections(films, only('opens'), window);
+    expect(titles(sections, 'opens')).toEqual(['New']);
+  });
+
+  it('builds no highlight tables without the dates to judge a run', () => {
+    // The dataset view can render a window it has no posting boundary for; an
+    // empty window must not turn every film into an opening.
+    const sections = buildSections([film('Whatever', week)], only('last-chance', 'opens'));
+    expect(sections.map((s) => s.id)).toEqual(['main']);
+  });
+
+  it('names only the venues that said the screening was free', () => {
+    const mixed = film('A Minecraft Movie', week, {
+      theaters: ['Palladium', 'Mission Marquee Plaza'],
+      freeVenues: ['Mission Marquee Plaza'],
+    });
+    const sections = buildSections([mixed], only('free'), window);
+    const entry = sections.find((s) => s.id === 'free')?.movies[0];
+    expect(entry?.theaters).toEqual(['Mission Marquee Plaza']);
+    // It still plays for money at the multiplex, so it keeps its main-table row.
+    expect(titles(sections, 'main')).toEqual(['A Minecraft Movie']);
+  });
+
+  it('leaves a film out of the free table when nothing said it was free', () => {
+    const sections = buildSections([film('Spider-Man', week)], only('free'), window);
+    expect(sections.find((s) => s.id === 'free')).toBeUndefined();
+  });
+});
+
+describe('claimed rows', () => {
+  it('lists a film in one partition even when it qualifies for two', () => {
+    // An Arabic-language revival is both foreign and a special screening; it is
+    // listed once, under whichever table comes first in the registry.
+    const revival: AggregatedMovie = {
+      key: 'k',
+      title: 'Old Foreign Film',
+      href: '/x',
+      theaters: ['Alamo Quarry'],
+      freeVenues: [],
+      dates: ['2026-08-04'],
+      formats: new Map(),
+      optional: new Map(),
+      optionalDates: new Map(),
+      isEvent: false,
+      sources: ['fandango'],
+      languages: ['Arabic'],
+      foreign: true,
+      releaseYear: 1974,
+      mergedHrefs: [],
+      ticketLinks: [],
+    };
+    const sections = buildSections([revival], only('foreign', 'events'));
+    const listed = sections.filter((s) => s.movies.some((m) => m.title === 'Old Foreign Film'));
+    expect(listed.map((s) => s.id)).toEqual(['foreign']);
+  });
+});
