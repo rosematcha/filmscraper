@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { applyVenueFilter, milesFrom, unanchoredVenues, NO_VENUE_FILTER } from '../src/core/filters.js';
+import {
+  applyVenueFilter,
+  milesFrom,
+  reconcileVenues,
+  unanchoredVenues,
+  NO_VENUE_FILTER,
+} from '../src/core/filters.js';
 import { parseGeocodeResult } from '../src/core/geo.js';
 import type { Coords } from '../src/core/geo.js';
 import type { Theater, VenueDay } from '../src/core/types.js';
@@ -9,12 +15,7 @@ const DOWNTOWN: Coords = { lat: 29.4241, lon: -98.4936 };
 /** 1132 W French Pl, 78201 — roughly three miles north-west of downtown. */
 const FRENCH_PL: Coords = { lat: 29.45, lon: -98.5086 };
 
-function day(
-  name: string,
-  miles: number,
-  coords?: Coords,
-  sourceId = 'fandango',
-): VenueDay {
+function day(name: string, miles: number, coords?: Coords, sourceId = 'fandango'): VenueDay {
   const theater: Theater = { name, href: `/${name}`, miles, ...(coords ? { coords } : {}) };
   return { theater, date: '2026-08-04', movies: [], sourceId };
 }
@@ -97,6 +98,49 @@ describe('applyVenueFilter', () => {
     const kept = applyVenueFilter(legacy, filter({ anchor: FRENCH_PL, radiusMiles: 5 }));
     expect(kept).toHaveLength(1);
     expect(kept[0]?.theater.miles).toBe(2);
+  });
+});
+
+describe('reconcileVenues', () => {
+  /** AMC Boerne 11: really 26.6 mi from downtown, 9.7 from a Boerne seed ZIP. */
+  const BOERNE: Coords = { lat: 29.7606, lon: -98.7078 };
+  const boerne = (date: string, miles: number, coords?: Coords): VenueDay => ({
+    ...day('AMC Boerne 11', miles, coords),
+    date,
+  });
+
+  it('settles on the distance backed by coordinates', () => {
+    const days = [
+      boerne('2026-08-13', 26.63, BOERNE),
+      boerne('2026-08-16', 9.74),
+      boerne('2026-08-17', 26.63, BOERNE),
+    ];
+    expect(reconcileVenues(days).map((d) => d.theater.miles)).toEqual([26.63, 26.63, 26.63]);
+    expect(reconcileVenues(days).every((d) => d.theater.coords === BOERNE)).toBe(true);
+  });
+
+  it('takes the furthest reading when no day has coordinates', () => {
+    const days = [boerne('2026-08-13', 26.63), boerne('2026-08-16', 9.74)];
+    expect(reconcileVenues(days).map((d) => d.theater.miles)).toEqual([26.63, 26.63]);
+  });
+
+  it('leaves an already-consistent venue untouched', () => {
+    const days = [boerne('2026-08-13', 26.63, BOERNE), boerne('2026-08-14', 26.63, BOERNE)];
+    expect(reconcileVenues(days)).toEqual(days);
+  });
+
+  it('keeps a whole run on one side of the radius', () => {
+    // The bug this guards: three of four days measured 26.63 mi and one 9.74,
+    // so a 15-mile radius kept a single day of a week-long booking and the
+    // Notes column called it a one-night engagement.
+    const days = [
+      boerne('2026-08-13', 26.63, BOERNE),
+      boerne('2026-08-14', 26.63, BOERNE),
+      boerne('2026-08-15', 26.63, BOERNE),
+      boerne('2026-08-16', 9.74),
+    ];
+    expect(applyVenueFilter(days, filter({ radiusMiles: 15 }))).toHaveLength(0);
+    expect(applyVenueFilter(days, filter({ radiusMiles: 30 }))).toHaveLength(4);
   });
 });
 
