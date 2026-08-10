@@ -6,7 +6,7 @@ const cache = new DiskCache('zip-centroid');
 const addressCache = new DiskCache('address-geo');
 
 /** Nominatim's usage policy asks for an identifying agent on server-side calls. */
-const NOMINATIM_AGENT = 'filmscraper/0.1 (https://github.com/reese/filmscraper)';
+const NOMINATIM_AGENT = 'filmscraper/0.1 (https://github.com/rosematcha/filmscraper)';
 
 /**
  * Coordinates for a free-text address, e.g. `1132 W French Pl, 78201`.

@@ -9,10 +9,21 @@
 export const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+/**
+ * Who the scraper says it is when a site refuses the browser agent.
+ *
+ * The McNay's WAF answers any Chrome user agent with a 403, so pretending to be
+ * one is not an option there; an honest, contactable agent is served normally.
+ */
+export const SCRAPER_USER_AGENT = 'filmscraper/0.1 (https://github.com/rosematcha/filmscraper)';
+
 /** Browser-shaped request headers, with `Accept` set to whatever is being asked for. */
-export function browserHeaders(accept = 'text/html,application/xhtml+xml,*/*;q=0.8'): Record<string, string> {
+export function browserHeaders(
+  accept = 'text/html,application/xhtml+xml,*/*;q=0.8',
+  userAgent = BROWSER_USER_AGENT,
+): Record<string, string> {
   return {
-    'User-Agent': BROWSER_USER_AGENT,
+    'User-Agent': userAgent,
     Accept: accept,
     'Accept-Language': 'en-US,en;q=0.9',
   };

@@ -81,11 +81,7 @@ export class BrowserSession {
  * A 429 or 503 means slow down rather than give up, so the delay grows with
  * each attempt instead of failing on the first refusal.
  */
-export async function gotoWithRetry(
-  page: Page,
-  url: string,
-  attempts = 3,
-): Promise<void> {
+export async function gotoWithRetry(page: Page, url: string, attempts = 3): Promise<void> {
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {

@@ -29,15 +29,13 @@ describe('dueSources', () => {
     }
   });
 
-  it('runs Slab, Mission Marquee, and Tobin Cinema calendars weekly on Sunday only', () => {
-    expect(dueSources(at(0, 18))).toEqual(
-      expect.arrayContaining(['slab-arthouse', 'slab-outdoor', 'mission-marquee', 'tobin-cinema']),
-    );
+  it('runs the venue calendars weekly on Sunday only', () => {
+    const weekly = ['slab-arthouse', 'slab-outdoor', 'mission-marquee', 'tobin-cinema', 'mcnay'];
+    expect(dueSources(at(0, 18))).toEqual(expect.arrayContaining(weekly));
     for (const day of [1, 2, 3, 4, 5, 6]) {
-      expect(dueSources(at(day, 18)), `day ${String(day)}`).not.toContain('slab-arthouse');
-      expect(dueSources(at(day, 18)), `day ${String(day)}`).not.toContain('slab-outdoor');
-      expect(dueSources(at(day, 18)), `day ${String(day)}`).not.toContain('mission-marquee');
-      expect(dueSources(at(day, 18)), `day ${String(day)}`).not.toContain('tobin-cinema');
+      for (const id of weekly) {
+        expect(dueSources(at(day, 18)), `${id} on day ${String(day)}`).not.toContain(id);
+      }
     }
   });
 

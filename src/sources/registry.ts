@@ -2,6 +2,7 @@ import type { BrowserSession } from '../net/browser.js';
 import { DriveInSource, STARS_AND_STRIPES } from './driveIn/index.js';
 import { FandangoSource } from './fandango/index.js';
 import { SaplSource } from './sapl/index.js';
+import { MCNAY, McnaySource } from './mcnay/index.js';
 import { MISSION_MARQUEE, MissionMarqueeSource } from './missionMarquee/index.js';
 import { SLAB_ARTHOUSE, SLAB_OUTDOOR, SlabSource } from './slab/index.js';
 import { TOBIN_CINEMA, TobinCinemaSource } from './tobinCenter/index.js';
@@ -21,6 +22,7 @@ export const SOURCES: readonly SourceInfo[] = [
   { id: SLAB_OUTDOOR.id, label: SLAB_OUTDOOR.label, needsBrowser: false, enabledByDefault: true },
   { id: MISSION_MARQUEE.id, label: MISSION_MARQUEE.label, needsBrowser: false, enabledByDefault: true },
   { id: TOBIN_CINEMA.id, label: TOBIN_CINEMA.label, needsBrowser: false, enabledByDefault: true },
+  { id: MCNAY.id, label: MCNAY.label, needsBrowser: false, enabledByDefault: true },
   {
     id: STARS_AND_STRIPES.id,
     label: STARS_AND_STRIPES.name,
@@ -52,6 +54,7 @@ export function buildSources(
   if (wanted.has(SLAB_OUTDOOR.id)) sources.push(new SlabSource(SLAB_OUTDOOR));
   if (wanted.has(MISSION_MARQUEE.id)) sources.push(new MissionMarqueeSource());
   if (wanted.has(TOBIN_CINEMA.id)) sources.push(new TobinCinemaSource());
+  if (wanted.has(MCNAY.id)) sources.push(new McnaySource());
   if (wanted.has(STARS_AND_STRIPES.id)) sources.push(new DriveInSource(STARS_AND_STRIPES));
   if (wanted.has('sapl')) sources.push(new SaplSource());
   return sources;

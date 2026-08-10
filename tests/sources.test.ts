@@ -9,6 +9,13 @@ import {
   parseMarqueeEvents,
 } from '../src/sources/missionMarquee/parse.js';
 import {
+  filmFromMcnayTitle,
+  isMcnayFilmEvent,
+  parseMcnayDate,
+  parseMcnayEvents,
+  parseMcnayTime,
+} from '../src/sources/mcnay/parse.js';
+import {
   filmFromTobinTitle,
   parseTobinCinemaEvents,
   parseTobinDate,
@@ -205,20 +212,27 @@ describe('iCal parsing', () => {
   });
 
   it('unfolds continuation lines', () => {
-    const folded = 'BEGIN:VEVENT\r\nDTSTART:20260803\r\nSUMMARY:A very long\r\n  title\r\nEND:VEVENT';
+    const folded =
+      'BEGIN:VEVENT\r\nDTSTART:20260803\r\nSUMMARY:A very long\r\n  title\r\nEND:VEVENT';
     expect(parseIcal(folded)[0]?.summary).toBe('A very long title');
   });
 });
 
 describe('SAPL film extraction', () => {
   const event = (over: Partial<Parameters<typeof filmFromSaplEvent>[0]>) =>
-    filmFromSaplEvent({ title: '', description: '', additionalInfo: '', date: '2026-08-03', ...over });
+    filmFromSaplEvent({
+      title: '',
+      description: '',
+      additionalInfo: '',
+      date: '2026-08-03',
+      ...over,
+    });
 
   it('reads the film out of a series title', () => {
     expect(event({ title: 'Movie Monday: Fall (2022)' })).toBe('Fall (2022)');
-    expect(
-      event({ title: 'Gen X Nostalgia Night: Nightmare on Elm Street' }),
-    ).toBe('Nightmare on Elm Street');
+    expect(event({ title: 'Gen X Nostalgia Night: Nightmare on Elm Street' })).toBe(
+      'Nightmare on Elm Street',
+    );
   });
 
   it('skips cancelled screenings', () => {
@@ -248,15 +262,19 @@ describe('SAPL film extraction', () => {
   });
 
   it('ignores a lineup entry from another month', () => {
-    expect(
-      filmFromLineup('June 5 – Chicken Little (G)', '2026-08-07'),
-    ).toBeNull();
+    expect(filmFromLineup('June 5 – Chicken Little (G)', '2026-08-07')).toBeNull();
   });
 
   it('skips a recurring series that names no film', () => {
-    expect(event({ title: 'First Friday Film!', description: 'Join us every first Friday.' })).toBeNull();
-    expect(event({ title: 'Geeks Assemble!', description: 'Gather to watch cult movies.' })).toBeNull();
-    expect(event({ title: 'Monster Meet', description: 'Join fellow horror fans for scary movies.' })).toBeNull();
+    expect(
+      event({ title: 'First Friday Film!', description: 'Join us every first Friday.' }),
+    ).toBeNull();
+    expect(
+      event({ title: 'Geeks Assemble!', description: 'Gather to watch cult movies.' }),
+    ).toBeNull();
+    expect(
+      event({ title: 'Monster Meet', description: 'Join fellow horror fans for scary movies.' }),
+    ).toBeNull();
   });
 
   it('skips movie-themed events that are not screenings', () => {
@@ -273,7 +291,9 @@ describe('SAPL film extraction', () => {
   });
 
   it('rejects a bare title with no screening language', () => {
-    expect(event({ title: 'Summer Reading Kickoff', description: 'Sign up for prizes.' })).toBeNull();
+    expect(
+      event({ title: 'Summer Reading Kickoff', description: 'Sign up for prizes.' }),
+    ).toBeNull();
   });
 });
 
@@ -313,7 +333,11 @@ describe('title selection across sources', () => {
       theater: { name: 'Drive-In', href: '', miles: 30 },
       date: '2026-08-03',
       movies: [
-        { title: 'Spiderman: Brand New Day', href: 'https://nb.driveinusa.com/e/1', groups: [group] },
+        {
+          title: 'Spiderman: Brand New Day',
+          href: 'https://nb.driveinusa.com/e/1',
+          groups: [group],
+        },
       ],
       sourceId: 'stars-and-stripes',
     };
@@ -354,5 +378,123 @@ describe('Drive-in calendar feed', () => {
     expect(result.days).toEqual([]);
     expect(result.warnings[0]?.kind).toBe('page-error');
     expect(result.warnings[0]?.message).toContain('403');
+  });
+});
+
+describe('McNay events page', () => {
+  // Trimmed from https://www.mcnayart.org/events/: the featured event, then two
+  // cards, the second of which the theme repeats for its mobile layout.
+  const html = `<div class="featured-event">
+    <div class="featured-event-info">
+      <a href="https://www.mcnayart.org/event/mcnay-summer-film-series-lovefest-paris-is-burning/">
+        <h3 class="title">McNay Summer Film Series: LOVEfest | Paris is Burning</h3>
+      </a>
+      <p class="event-date">Saturday, August 15, 2026</p>
+      <p class="event-time">1:00 pm &ndash; 3:00 pm</p>
+    </div>
+  </div>
+  <div class="secondary-events-single programs">
+    <a href="https://www.mcnayart.org/event/gallery-talk-two-faced/" class="title">Gallery Talk | Two Faced</a>
+    <p class="event-date">September 3, 2026</p>
+    <p class="event-time">6:00 pm &ndash; 7:00 pm</p>
+  </div>
+  <div class="secondary-events-single programs">
+    <a href="https://www.mcnayart.org/event/film-screening-angels-in-america-part-one/" class="title">Film Screening and Panel Discussion | Angels in America Part One: Millennium Approaches (2003)</a>
+    <p class="event-date">September 27, 2026</p>
+    <p class="event-time">1:00 pm &ndash; 5:00 pm</p>
+  </div>
+  <div class="secondary-events-single programs">
+    <a href="https://www.mcnayart.org/event/film-screening-angels-in-america-part-one/" class="title">Film Screening and Panel Discussion | Angels in America Part One: Millennium Approaches (2003)</a>
+    <p class="event-date">September 27, 2026</p>
+    <p class="event-time">1:00 pm &ndash; 5:00 pm</p>
+  </div>`;
+
+  it('reads the featured event and the cards once each', () => {
+    const events = parseMcnayEvents(html);
+    expect(events).toHaveLength(3);
+    expect(events[0]).toEqual({
+      title: 'McNay Summer Film Series: LOVEfest | Paris is Burning',
+      url: 'https://www.mcnayart.org/event/mcnay-summer-film-series-lovefest-paris-is-burning/',
+      date: '2026-08-15',
+      time: '1:00p',
+    });
+    expect(events[2]?.date).toBe('2026-09-27');
+  });
+
+  it('keeps both showings when an event repeats in a day', () => {
+    const twice = html.replace(
+      '<p class="event-time">6:00 pm &ndash; 7:00 pm</p>',
+      '<p class="event-time">6:00 pm &ndash; 7:00 pm</p><p class="event-date">September 3, 2026</p><p class="event-time">8:00 pm &ndash; 9:00 pm</p>',
+    );
+    expect(parseMcnayEvents(twice).map((e) => e.time)).toEqual([
+      '1:00p',
+      '6:00p',
+      '8:00p',
+      '1:00p',
+    ]);
+  });
+
+  it('keeps the museum programme that is not a screening out', () => {
+    const titles = parseMcnayEvents(html).filter((e) => isMcnayFilmEvent(e.title));
+    expect(titles.map((e) => e.date)).toEqual(['2026-08-15', '2026-09-27']);
+  });
+
+  it('reads both date styles the theme uses', () => {
+    expect(parseMcnayDate('Sunday, September 27, 2026')).toBe('2026-09-27');
+    expect(parseMcnayDate('September 4, 2026')).toBe('2026-09-04');
+    expect(parseMcnayDate('Opening soon')).toBeNull();
+  });
+
+  it('takes the start of the time range', () => {
+    expect(parseMcnayTime('1:00 pm &ndash; 5:00 pm')).toBe('1:00p');
+    expect(parseMcnayTime('10:00 am &ndash; 11:00 am')).toBe('10:00a');
+    expect(parseMcnayTime('')).toBe('');
+  });
+});
+
+describe('McNay title extraction', () => {
+  it('takes the film after the series prefix', () => {
+    expect(filmFromMcnayTitle('McNay Summer Film Series: LOVEfest | Paris is Burning')).toBe(
+      'Paris is Burning',
+    );
+    expect(filmFromMcnayTitle('Film Screening: The Walkout')).toBe('The Walkout');
+    expect(filmFromMcnayTitle('1954 Film Series: Godzilla')).toBe('Godzilla');
+    expect(filmFromMcnayTitle('Film: Deep in the Heart of Texas')).toBe(
+      'Deep in the Heart of Texas',
+    );
+  });
+
+  it('drops the run status the museum stamps on the front', () => {
+    expect(filmFromMcnayTitle('SOLD OUT | 1954 Film Series: Godzilla')).toBe('Godzilla');
+    expect(filmFromMcnayTitle('FREE | Film Screening: The Walkout')).toBe('The Walkout');
+  });
+
+  it('drops a screening that is not happening', () => {
+    expect(filmFromMcnayTitle('POSTPONED: GET REEL: Clueless')).toBeNull();
+    expect(filmFromMcnayTitle('CANCELLED | Film Screening: Hamlet')).toBeNull();
+  });
+
+  it('ignores the session a repeated event is tagged with', () => {
+    // The museum runs the same event twice and tells them apart in the title.
+    expect(filmFromMcnayTitle('Film Screening | Rear Window | Friday Morning')).toBe('Rear Window');
+  });
+
+  it('keeps a film whose own name reads like a series label', () => {
+    expect(filmFromMcnayTitle('The Story of Film: An Odyssey')).toBe(
+      'The Story of Film: An Odyssey',
+    );
+  });
+
+  it('keeps a colon that belongs to the film', () => {
+    expect(
+      filmFromMcnayTitle(
+        'Film Screening and Panel Discussion | Angels in America Part One: Millennium Approaches (2003)',
+      ),
+    ).toBe('Angels in America Part One: Millennium Approaches (2003)');
+  });
+
+  it('skips an entry that names no film', () => {
+    expect(filmFromMcnayTitle('Film Screening')).toBeNull();
+    expect(filmFromMcnayTitle('Film Screening: TBA')).toBeNull();
   });
 });
