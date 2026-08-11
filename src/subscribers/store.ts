@@ -102,17 +102,20 @@ export class SubscriberStore {
     if (!ref) return null;
     const subscriber = await this.get(ref.emailHash);
     if (!subscriber) return null;
+    const currentHash =
+      ref.kind === 'confirm' ? subscriber.confirmTokenHash : subscriber.manageTokenHash;
+    if (currentHash !== tokenHash) return null;
     return { emailHash: ref.emailHash, kind: ref.kind, subscriber };
   }
 
   /** Everyone the weekly digest goes to. */
   async listConfirmed(): Promise<Subscriber[]> {
     const keys = await this.kv.list(SUB);
-    const out: Subscriber[] = [];
-    for (const key of keys) {
-      const subscriber = parse(await this.kv.get(key), isSubscriber);
-      if (subscriber?.status === 'confirmed') out.push(subscriber);
-    }
-    return out;
+    const subscribers = await Promise.all(
+      keys.map(async (key) => parse(await this.kv.get(key), isSubscriber)),
+    );
+    return subscribers.filter(
+      (subscriber): subscriber is Subscriber => subscriber?.status === 'confirmed',
+    );
   }
 }

@@ -39,7 +39,10 @@ export function validEmail(raw: string): string | null {
 /** Trim, drop control characters, cap the length; empty collapses to absent. */
 export function cleanName(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
-  const name = raw.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, MAX_NAME_LENGTH);
+  const name = raw
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .trim()
+    .slice(0, MAX_NAME_LENGTH);
   return name === '' ? undefined : name;
 }
 
@@ -95,13 +98,31 @@ export async function subscribe(
   await deps.store.putToken(subscriber.confirmTokenHash, hash, 'confirm');
   await deps.store.putToken(subscriber.manageTokenHash, hash, 'manage');
 
-  await deps.mailer.send(
-    confirmationEmail({
-      to: email,
-      firstName,
-      confirmUrl: `${deps.siteUrl}/api/confirm?token=${confirmToken}`,
-    }),
-  );
+  try {
+    await deps.mailer.send(
+      confirmationEmail({
+        to: email,
+        firstName,
+        confirmUrl: `${deps.siteUrl}/api/confirm?token=${confirmToken}`,
+      }),
+    );
+  } catch (error) {
+    // Do not leave an address in the cooldown when no message went out. A
+    // resend also has to restore its previous links, since those may already
+    // be sitting in the subscriber's inbox.
+    await Promise.allSettled([
+      deps.store.deleteToken(subscriber.confirmTokenHash),
+      deps.store.deleteToken(subscriber.manageTokenHash),
+    ]);
+    if (existing) {
+      await deps.store.put(hash, existing);
+      await deps.store.putToken(existing.confirmTokenHash, hash, 'confirm');
+      await deps.store.putToken(existing.manageTokenHash, hash, 'manage');
+    } else {
+      await deps.store.delete(hash);
+    }
+    throw error;
+  }
   return 'ok';
 }
 
