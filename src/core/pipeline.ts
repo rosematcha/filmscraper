@@ -1,7 +1,7 @@
 import { aggregate, isLive, type AliasConfig } from './aggregate.js';
 import { applyVenueFilter } from './filters.js';
 import type { Coords } from './geo.js';
-import { dateRange } from './notes.js';
+import { dateRange, humanList, shortenTheater } from './notes.js';
 import type {
   IsoDate,
   ProgressFn,
@@ -57,6 +57,15 @@ export function expiredTodayWarning(
 const HORIZON_DENSITY = 0.6;
 
 /**
+ * Days from the source that posts weekly grids, which is the only source a
+ * posting boundary can be read from. Fandango days carry no source id, being
+ * the run's default source.
+ */
+function isWeeklyGridDay(day: VenueDay): boolean {
+  return day.sourceId === undefined || day.sourceId === 'fandango';
+}
+
+/**
  * Last date whose schedule looks fully posted.
  *
  * Theaters publish a week at a time, so the tail of a long window carries only
@@ -83,7 +92,7 @@ export function detectHorizon(
   // single film three weeks out must not imply the multiplexes have posted
   // that far ahead — and with no such source in the run there is no posting
   // boundary to find, because event calendars publish months ahead in full.
-  const scoped = days.filter((d) => d.sourceId === undefined || d.sourceId === 'fandango');
+  const scoped = days.filter(isWeeklyGridDay);
   if (scoped.length === 0) return last;
 
   const liveCount = (date: IsoDate): number =>
@@ -142,6 +151,147 @@ export function pastDatesWarning(dates: readonly IsoDate[], today: IsoDate): Scr
       `${String(past.length)} date${past.length === 1 ? '' : 's'} in the window ` +
       `(${past[0] ?? ''}${past.length > 1 ? ` – ${past.at(-1) ?? ''}` : ''}) ` +
       `already passed, so no showtimes remain for them.`,
+  };
+}
+
+/** A theater-day holding less than this share of the venue's peak is unposted. */
+const THEATER_DENSITY = 0.5;
+
+/**
+ * A venue whose busiest day lists fewer films than this cannot be measured by
+ * density. The Rainbow Theater books one film for three dates a month: that is
+ * its whole schedule, not a schedule waiting to be posted.
+ */
+const MIN_MEASURABLE_PEAK = 4;
+
+/** A theater still showing pre-sales where the rest have posted schedules. */
+export interface TheaterLag {
+  readonly theater: string;
+  /** Last date whose schedule looks posted at this venue. */
+  readonly postedThrough: IsoDate;
+}
+
+/**
+ * Theaters that have not caught up to the market-wide posting boundary.
+ *
+ * Most theaters put the coming week on sale Tuesday or Wednesday, but not in
+ * step: the Regals can be posted through Sunday while Rivercenter still shows
+ * one pre-sold title a day past Wednesday. The global horizon averages over
+ * that split, so the laggards need naming on their own.
+ *
+ * Each venue is measured against its own peak, the same way `detectHorizon`
+ * measures the market. A sentinel film from `AliasConfig.sentinels` — a title
+ * that screens daily year-round, like Rivercenter's *Alamo: The Price of
+ * Freedom* — marks a thin day as posted anyway, since the fixture only appears
+ * once the real grid is up. Its absence never condemns a busy day: even a
+ * thirty-year run can lose a date to an IMAX takeover.
+ */
+export function laggingTheaters(
+  days: readonly VenueDay[],
+  dates: readonly IsoDate[],
+  today: IsoDate,
+  horizon: IsoDate,
+  sentinels: Readonly<Record<string, string>>,
+): TheaterLag[] {
+  const future = dates.filter((d) => d > today);
+  if (future.length === 0) return [];
+
+  const sentinelFor = new Map(
+    Object.entries(sentinels).map(([name, title]) => [name.toLowerCase(), title.toLowerCase()]),
+  );
+
+  interface Venue {
+    readonly counts: Map<IsoDate, number>;
+    readonly sentinelDates: Set<IsoDate>;
+  }
+  const venues = new Map<string, Venue>();
+  for (const day of days) {
+    // Only the weekly-grid source can lag. An event calendar posts months
+    // ahead in full, so density says nothing about it.
+    if (!isWeeklyGridDay(day)) continue;
+    const live = day.movies.filter((m) => m.groups.some(isLive));
+    let venue = venues.get(day.theater.name);
+    if (!venue) {
+      venue = { counts: new Map(), sentinelDates: new Set() };
+      venues.set(day.theater.name, venue);
+    }
+    venue.counts.set(day.date, (venue.counts.get(day.date) ?? 0) + live.length);
+    const sentinel = sentinelFor.get(day.theater.name.toLowerCase());
+    if (sentinel !== undefined && live.some((m) => m.title.toLowerCase().includes(sentinel))) {
+      venue.sentinelDates.add(day.date);
+    }
+  }
+
+  // Today is part of the baseline even though expired showtimes may have
+  // thinned it: the theater that has posted nothing past today at all has no
+  // future peak to measure, and the worst laggard would otherwise slip the
+  // warning. A thinned count only ever lowers the floor, which errs quiet.
+  const measured = dates.filter((d) => d >= today);
+
+  const lags: TheaterLag[] = [];
+  for (const [theater, venue] of venues) {
+    const peak = Math.max(...measured.map((d) => venue.counts.get(d) ?? 0));
+    if (peak < MIN_MEASURABLE_PEAK) continue;
+    const floor = peak * THEATER_DENSITY;
+
+    let postedThrough = dates[0] ?? today;
+    for (const date of dates) {
+      if (date <= today) {
+        postedThrough = date;
+        continue;
+      }
+      if (!venue.sentinelDates.has(date) && (venue.counts.get(date) ?? 0) < floor) break;
+      postedThrough = date;
+    }
+    if (postedThrough < horizon) lags.push({ theater, postedThrough });
+  }
+  return lags.sort(
+    (a, b) => a.postedThrough.localeCompare(b.postedThrough) || a.theater.localeCompare(b.theater),
+  );
+}
+
+export function theaterLagWarning(
+  lags: readonly TheaterLag[],
+  theaterNames: Readonly<Record<string, string>>,
+): ScrapeWarning | null {
+  const first = lags[0];
+  if (first === undefined) return null;
+
+  // Grouped by boundary, because the laggards mostly share one: a midweek
+  // split can put seventeen venues here, and naming a date seventeen times
+  // buries the theaters it is meant to surface.
+  const byDate = new Map<IsoDate, string[]>();
+  for (const lag of lags) {
+    const names = byDate.get(lag.postedThrough) ?? [];
+    names.push(shortenTheater(lag.theater, theaterNames));
+    byDate.set(lag.postedThrough, names);
+  }
+
+  const where = lags.length === 1 ? 'there' : 'at these venues';
+  const when = byDate.size === 1 ? 'that date' : 'those dates';
+  const explain =
+    `Most theaters announce the coming week on Tuesday or Wednesday, so a film missing ` +
+    `${where} after ${when} may not be on sale yet.`;
+
+  if (lags.length === 1) {
+    return {
+      kind: 'theater-lag',
+      message:
+        `${shortenTheater(first.theater, theaterNames)} has not posted full schedules ` +
+        `past ${first.postedThrough} yet. ${explain}`,
+    };
+  }
+
+  const groups = [...byDate]
+    .map(([date, names], i) =>
+      i === 0
+        ? `${humanList(names)} ${names.length === 1 ? 'has' : 'have'} listings through ${date}`
+        : `${humanList(names)} through ${date}`,
+    )
+    .join('; ');
+  return {
+    kind: 'theater-lag',
+    message: `Some theaters have not posted full schedules yet: ${groups}. ${explain}`,
   };
 }
 
@@ -276,6 +426,14 @@ export async function runPipeline(
     radiusMiles: request.radiusMiles,
     exemptSources: options.unfilteredSources ?? new Set<string>(),
   });
+
+  // Measured after the venue filter, so the warning never names a theater the
+  // radius or a chain exclusion has already dropped from the table.
+  const lagging = theaterLagWarning(
+    laggingTheaters(inRange, dates, today, horizon, options.aliases.sentinels),
+    options.aliases.theaterNames,
+  );
+  if (lagging) warnings.push(lagging);
 
   const theaters = collectTheaters(inRange);
   const movies = aggregate(inRange, theaters, {

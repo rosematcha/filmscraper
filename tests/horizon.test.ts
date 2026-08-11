@@ -4,7 +4,9 @@ import {
   detectHorizon,
   detectKnownFrom,
   horizonWarning,
+  laggingTheaters,
   pastDatesWarning,
+  theaterLagWarning,
 } from '../src/core/pipeline.js';
 import type { MovieListing, VenueDay } from '../src/core/types.js';
 
@@ -63,6 +65,153 @@ describe('detectHorizon', () => {
   it('warns only when the horizon falls short of the window', () => {
     expect(horizonWarning('2026-08-06', WEEK)?.kind).toBe('partial-horizon');
     expect(horizonWarning('2026-08-08', WEEK)).toBeNull();
+  });
+});
+
+describe('laggingTheaters', () => {
+  const RIVERCENTER = 'AMC Rivercenter 11 with Alamo IMAX';
+  const SENTINELS = { [RIVERCENTER]: 'Alamo: The Price of Freedom' };
+  const TODAY = WEEK[0] ?? '';
+
+  /** One venue-day listing the given titles, all live. */
+  function at(theater: string, date: string, titles: readonly string[], sourceId?: string): VenueDay {
+    const movies: MovieListing[] = titles.map((title) => ({
+      title,
+      href: `/${title.replaceAll(/\W+/g, '-').toLowerCase()}/movie-overview`,
+      groups: [
+        {
+          amenities: [],
+          isDolby: false,
+          variantId: null,
+          showtimes: [{ time: '7:00p', expired: false }],
+        },
+      ],
+    }));
+    return {
+      theater: { name: theater, href: '/t/theater-page', miles: 1 },
+      date,
+      movies,
+      ...(sourceId === undefined ? {} : { sourceId }),
+    };
+  }
+
+  /** `n` filler titles, plus the sentinel unless the day is unposted. */
+  function grid(n: number, sentinel = false): string[] {
+    const titles = Array.from({ length: n }, (_, i) => `Film ${String(i)}`);
+    return sentinel ? ['Alamo: The Price of Freedom', ...titles] : titles;
+  }
+
+  /**
+   * The pattern measured live on Aug 10: Rivercenter ran ten films (sentinel
+   * included) through Wednesday, then one pre-sold title a day.
+   */
+  function rivercenterWeek(): VenueDay[] {
+    return WEEK.map((d, i) => at(RIVERCENTER, d, i < 3 ? grid(9, true) : grid(1)));
+  }
+
+  it('flags a theater still on pre-sales past its own posting boundary', () => {
+    const lags = laggingTheaters(rivercenterWeek(), WEEK, TODAY, WEEK[6] ?? '', SENTINELS);
+    expect(lags).toEqual([{ theater: RIVERCENTER, postedThrough: '2026-08-04' }]);
+  });
+
+  it('says nothing when the venue is posted to the market horizon', () => {
+    expect(laggingTheaters(rivercenterWeek(), WEEK, TODAY, '2026-08-04', SENTINELS)).toEqual([]);
+  });
+
+  it('flags a theater whose listings stop dead after today', () => {
+    // No future peak to measure, but a full grid today proves the venue is a
+    // multiplex — the worst laggard must not slip the warning entirely.
+    const days = [at(RIVERCENTER, TODAY, grid(9, true))];
+    const lags = laggingTheaters(days, WEEK, TODAY, WEEK[6] ?? '', SENTINELS);
+    expect(lags).toEqual([{ theater: RIVERCENTER, postedThrough: TODAY }]);
+  });
+
+  it('trusts a live sentinel to mark a thin day as posted', () => {
+    // A quiet Wednesday with three films is still a posted schedule when the
+    // thirty-year fixture is on it.
+    const days = [
+      at(RIVERCENTER, WEEK[1] ?? '', grid(9, true)),
+      at(RIVERCENTER, WEEK[2] ?? '', grid(2, true)),
+      at(RIVERCENTER, WEEK[3] ?? '', grid(1)),
+    ];
+    const lags = laggingTheaters(days, WEEK.slice(0, 4), TODAY, WEEK[3] ?? '', SENTINELS);
+    expect(lags).toEqual([{ theater: RIVERCENTER, postedThrough: '2026-08-04' }]);
+  });
+
+  it('does not let a missing sentinel condemn a busy day', () => {
+    // An IMAX takeover can bump even the fixture; a full grid stays posted.
+    const days = [
+      at(RIVERCENTER, WEEK[1] ?? '', grid(9, true)),
+      at(RIVERCENTER, WEEK[2] ?? '', grid(8)),
+    ];
+    expect(laggingTheaters(days, WEEK.slice(0, 3), TODAY, WEEK[2] ?? '', SENTINELS)).toEqual([]);
+  });
+
+  it('skips venues too small to measure by density', () => {
+    // The Rainbow books one film for three dates: that is its whole schedule.
+    const days = [
+      at('Rainbow Theater', WEEK[4] ?? '', ['Rocky Horror']),
+      at('Rainbow Theater', WEEK[5] ?? '', ['Rocky Horror']),
+    ];
+    expect(laggingTheaters(days, WEEK, TODAY, WEEK[6] ?? '', {})).toEqual([]);
+  });
+
+  it('ignores sources that are not weekly grids', () => {
+    const days = WEEK.map((d, i) => at('Central Library', d, i < 2 ? grid(5) : [], 'sapl'));
+    expect(laggingTheaters(days, WEEK, TODAY, WEEK[6] ?? '', {})).toEqual([]);
+  });
+
+  it('names the laggards with their short names, grouped by boundary', () => {
+    // A midweek split can put seventeen venues here; venues sharing a boundary
+    // share one date mention rather than repeating it seventeen times.
+    const lags = [
+      { theater: RIVERCENTER, postedThrough: '2026-08-04' },
+      { theater: 'Santikos Galaxy', postedThrough: '2026-08-04' },
+      { theater: 'City Base Entertainment', postedThrough: '2026-08-05' },
+    ];
+    const warning = theaterLagWarning(lags, {
+      [RIVERCENTER]: 'Rivercenter',
+      'City Base Entertainment': 'City Base',
+    });
+    expect(warning?.kind).toBe('theater-lag');
+    expect(warning?.message).toBe(
+      'Some theaters have not posted full schedules yet: Rivercenter and Santikos Galaxy have ' +
+        'listings through 2026-08-04; City Base through 2026-08-05. Most theaters announce the ' +
+        'coming week on Tuesday or Wednesday, so a film missing at these venues after those ' +
+        'dates may not be on sale yet.',
+    );
+  });
+
+  it('speaks in the singular for a lone laggard', () => {
+    const warning = theaterLagWarning([{ theater: RIVERCENTER, postedThrough: '2026-08-04' }], {});
+    expect(warning?.message).toBe(
+      'AMC Rivercenter 11 with Alamo IMAX has not posted full schedules past 2026-08-04 yet. ' +
+        'Most theaters announce the coming week on Tuesday or Wednesday, so a film missing ' +
+        'there after that date may not be on sale yet.',
+    );
+    expect(theaterLagWarning([], {})).toBeNull();
+  });
+
+  it('keeps subject and verb agreeing when the first group has one theater', () => {
+    const warning = theaterLagWarning(
+      [
+        { theater: 'Theater A', postedThrough: '2026-08-04' },
+        { theater: 'Theater B', postedThrough: '2026-08-05' },
+      ],
+      {},
+    );
+    expect(warning?.message).toContain('Theater A has listings through 2026-08-04');
+  });
+
+  it('speaks of one date when every laggard shares a boundary', () => {
+    const warning = theaterLagWarning(
+      [
+        { theater: 'Theater A', postedThrough: '2026-08-04' },
+        { theater: 'Theater B', postedThrough: '2026-08-04' },
+      ],
+      {},
+    );
+    expect(warning?.message).toContain('at these venues after that date');
   });
 });
 

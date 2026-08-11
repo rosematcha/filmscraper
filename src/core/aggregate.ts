@@ -18,9 +18,16 @@ export interface AliasConfig {
   readonly split: readonly (readonly string[])[];
   /** Full theater name -> short name for the Notes column. */
   readonly theaterNames: Readonly<Record<string, string>>;
+  /**
+   * Theater name -> a title fragment for a film that screens there every day,
+   * year-round. Its presence proves the date's schedule is posted even when
+   * the grid is thin; its absence proves nothing, since even a thirty-year
+   * fixture can lose a day to an IMAX takeover.
+   */
+  readonly sentinels: Readonly<Record<string, string>>;
 }
 
-export const EMPTY_ALIASES: AliasConfig = { merge: [], split: [], theaterNames: {} };
+export const EMPTY_ALIASES: AliasConfig = { merge: [], split: [], theaterNames: {}, sentinels: {} };
 
 export interface AggregateOptions {
   readonly aliases: AliasConfig;

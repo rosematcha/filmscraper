@@ -20,5 +20,10 @@
     "Flix Brewhouse San Antonio": "Flix Brewhouse",
     "Santikos Entertainment Westlakes": "Santikos Westlakes",
     "City Base Entertainment": "City Base"
+  },
+
+  "$comment_sentinels": "Theater name -> a title fragment for a film that screens there daily, year-round. If it is missing from a date, that date's schedule likely is not posted yet. Both sides match case-insensitively.",
+  "sentinels": {
+    "AMC Rivercenter 11 with Alamo IMAX": "Alamo: The Price of Freedom"
   }
 }

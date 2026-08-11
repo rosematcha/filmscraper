@@ -46,5 +46,6 @@ export async function loadAliases(path = DEFAULT_ALIASES_PATH): Promise<AliasCon
     merge: idGroups(record['merge']),
     split: idGroups(record['split']),
     theaterNames: stringRecord(record['theaterNames']),
+    sentinels: stringRecord(record['sentinels']),
   };
 }

@@ -110,7 +110,7 @@ describe('aggregate', () => {
   });
 
   it('honours a split override', () => {
-    const aliases: AliasConfig = { merge: [], split: [['244954', '246362']], theaterNames: {} };
+    const aliases: AliasConfig = { merge: [], split: [['244954', '246362']], theaterNames: {}, sentinels: {} };
     const days = [
       day(RIVERCENTER, '2026-08-05', [
         listing('Backrooms (2026)', '/backrooms-2026-244954/movie-overview', [group([[2011, 'Reserved seating']])]),
@@ -125,7 +125,7 @@ describe('aggregate', () => {
   });
 
   it('honours a merge override for titles that do not look alike', () => {
-    const aliases: AliasConfig = { merge: [['1', '2']], split: [], theaterNames: {} };
+    const aliases: AliasConfig = { merge: [['1', '2']], split: [], theaterNames: {}, sentinels: {} };
     const days = [
       day(RIVERCENTER, '2026-08-05', [
         listing('Alpha (2026)', '/alpha-1/movie-overview', [group([[2011, 'Reserved seating']])]),
