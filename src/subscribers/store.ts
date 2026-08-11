@@ -7,7 +7,7 @@ export interface Subscriber {
   readonly firstName?: string;
   /** Section ids from the tables registry; what the digest should include. */
   readonly tables: readonly string[];
-  readonly status: 'pending' | 'confirmed';
+  readonly status: 'pending' | 'confirmed' | 'deleted';
   readonly createdAt: string;
   readonly confirmedAt?: string;
   /** When the confirmation email last went out; throttles resends. */
@@ -33,7 +33,9 @@ function isSubscriber(value: unknown): value is Subscriber {
   const record = value as Record<string, unknown>;
   return (
     typeof record['email'] === 'string' &&
-    (record['status'] === 'pending' || record['status'] === 'confirmed') &&
+    (record['status'] === 'pending' ||
+      record['status'] === 'confirmed' ||
+      record['status'] === 'deleted') &&
     Array.isArray(record['tables']) &&
     typeof record['confirmTokenHash'] === 'string' &&
     typeof record['manageTokenHash'] === 'string'
@@ -73,8 +75,30 @@ export class SubscriberStore {
     return parse(await this.kv.get(SUB + emailHash), isSubscriber);
   }
 
+  async getVersioned(emailHash: string): Promise<{ subscriber: Subscriber; etag: string } | null> {
+    const entry = await this.kv.getVersioned(SUB + emailHash);
+    if (!entry) return null;
+    const subscriber = parse(entry.value, isSubscriber);
+    return subscriber ? { subscriber, etag: entry.etag } : null;
+  }
+
   async put(emailHash: string, subscriber: Subscriber): Promise<void> {
     await this.kv.set(SUB + emailHash, JSON.stringify(subscriber));
+  }
+
+  async create(
+    emailHash: string,
+    subscriber: Subscriber,
+  ): Promise<{ modified: boolean; etag?: string }> {
+    return this.kv.create(SUB + emailHash, JSON.stringify(subscriber));
+  }
+
+  async update(
+    emailHash: string,
+    subscriber: Subscriber,
+    etag: string,
+  ): Promise<{ modified: boolean; etag?: string }> {
+    return this.kv.update(SUB + emailHash, JSON.stringify(subscriber), etag);
   }
 
   async delete(emailHash: string): Promise<void> {
@@ -87,7 +111,11 @@ export class SubscriberStore {
   }
 
   async putToken(tokenHash: string, emailHash: string, kind: TokenKind): Promise<void> {
-    await this.kv.set(TOK + tokenHash, JSON.stringify({ emailHash, kind }));
+    const value = JSON.stringify({ emailHash, kind });
+    const created = await this.kv.create(TOK + tokenHash, value);
+    if (!created.modified && (await this.kv.get(TOK + tokenHash)) !== value) {
+      throw new Error('token collision');
+    }
   }
 
   async deleteToken(tokenHash: string): Promise<void> {
@@ -95,17 +123,21 @@ export class SubscriberStore {
   }
 
   /** The subscriber a token belongs to, or null for a wrong or spent token. */
-  async lookupToken(
-    tokenHash: string,
-  ): Promise<{ emailHash: string; kind: TokenKind; subscriber: Subscriber } | null> {
+  async lookupToken(tokenHash: string): Promise<{
+    emailHash: string;
+    kind: TokenKind;
+    subscriber: Subscriber;
+    etag: string;
+  } | null> {
     const ref = parse(await this.kv.get(TOK + tokenHash), isTokenRef);
     if (!ref) return null;
-    const subscriber = await this.get(ref.emailHash);
-    if (!subscriber) return null;
+    const versioned = await this.getVersioned(ref.emailHash);
+    if (!versioned) return null;
+    const { subscriber, etag } = versioned;
     const currentHash =
       ref.kind === 'confirm' ? subscriber.confirmTokenHash : subscriber.manageTokenHash;
     if (currentHash !== tokenHash) return null;
-    return { emailHash: ref.emailHash, kind: ref.kind, subscriber };
+    return { emailHash: ref.emailHash, kind: ref.kind, subscriber, etag };
   }
 
   /** Everyone the weekly digest goes to. */

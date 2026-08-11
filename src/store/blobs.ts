@@ -19,9 +19,18 @@ export function blobsKv(name: string): KeyValue {
     // Confirmation and unsubscribe links are read immediately after writes;
     // eventual reads can report a valid new token as missing for up to a minute.
     get: (key) => store.get(key, { type: 'text', consistency: 'strong' }),
+    getVersioned: async (key) => {
+      const entry = await store.getWithMetadata(key, {
+        type: 'text',
+        consistency: 'strong',
+      });
+      return entry?.etag ? { value: entry.data, etag: entry.etag } : null;
+    },
     set: async (key, value) => {
       await store.set(key, value);
     },
+    create: (key, value) => store.set(key, value, { onlyIfNew: true }),
+    update: (key, value, etag) => store.set(key, value, { onlyIfMatch: etag }),
     delete: async (key) => {
       await store.delete(key);
     },

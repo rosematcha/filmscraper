@@ -62,82 +62,104 @@ export async function subscribe(
 
   const now = (deps.now ?? (() => new Date()))();
   const hash = emailKey(email);
-  const existing = await deps.store.get(hash);
-
-  if (existing?.status === 'confirmed') return 'ok';
-  if (existing && now.getTime() - Date.parse(existing.confirmSentAt) < CONFIRM_COOLDOWN_MS) {
-    return 'ok';
-  }
-
-  // A resend rotates both tokens; the mappings from the stale ones go first
-  // so a superseded confirm link stops working.
-  if (existing) {
-    await deps.store.deleteToken(existing.confirmTokenHash);
-    await deps.store.deleteToken(existing.manageTokenHash);
-  }
-
-  const confirmToken = newToken();
-  const manageToken = newToken();
-  const firstName = cleanName(request.firstName);
-  const tables = knownTables(request.tables ?? []);
-
-  const subscriber: Subscriber = {
-    email,
-    ...(firstName !== undefined ? { firstName } : {}),
-    // An empty pick would mean a digest with nothing in it; treat it as the
-    // default set instead.
-    tables: tables.length > 0 ? tables : DEFAULT_TABLE_IDS,
-    status: 'pending',
-    createdAt: existing?.createdAt ?? now.toISOString(),
-    confirmSentAt: now.toISOString(),
-    confirmTokenHash: sha256Hex(confirmToken),
-    manageTokenHash: sha256Hex(manageToken),
-  };
-
-  await deps.store.put(hash, subscriber);
-  await deps.store.putToken(subscriber.confirmTokenHash, hash, 'confirm');
-  await deps.store.putToken(subscriber.manageTokenHash, hash, 'manage');
-
-  try {
-    await deps.mailer.send(
-      confirmationEmail({
-        to: email,
-        firstName,
-        confirmUrl: `${deps.siteUrl}/api/confirm?token=${confirmToken}`,
-      }),
-    );
-  } catch (error) {
-    // Do not leave an address in the cooldown when no message went out. A
-    // resend also has to restore its previous links, since those may already
-    // be sitting in the subscriber's inbox.
-    await Promise.allSettled([
-      deps.store.deleteToken(subscriber.confirmTokenHash),
-      deps.store.deleteToken(subscriber.manageTokenHash),
-    ]);
-    if (existing) {
-      await deps.store.put(hash, existing);
-      await deps.store.putToken(existing.confirmTokenHash, hash, 'confirm');
-      await deps.store.putToken(existing.manageTokenHash, hash, 'manage');
-    } else {
-      await deps.store.delete(hash);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const current = await deps.store.getVersioned(hash);
+    const existing = current?.subscriber ?? null;
+    if (existing?.status === 'confirmed') return 'ok';
+    if (
+      existing?.status === 'pending' &&
+      now.getTime() - Date.parse(existing.confirmSentAt) < CONFIRM_COOLDOWN_MS
+    ) {
+      return 'ok';
     }
-    throw error;
+
+    const confirmToken = newToken();
+    const manageToken = newToken();
+    const firstName = cleanName(request.firstName);
+    const tables = knownTables(request.tables ?? []);
+    const subscriber: Subscriber = {
+      email,
+      ...(firstName !== undefined ? { firstName } : {}),
+      tables: tables.length > 0 ? tables : DEFAULT_TABLE_IDS,
+      status: 'pending',
+      createdAt: existing && existing.status !== 'deleted' ? existing.createdAt : now.toISOString(),
+      confirmSentAt: now.toISOString(),
+      confirmTokenHash: sha256Hex(confirmToken),
+      manageTokenHash: sha256Hex(manageToken),
+    };
+
+    try {
+      // Token refs are unique, disposable indexes. Install them before the
+      // authoritative subscriber CAS; until that succeeds, lookup rejects them.
+      await deps.store.putToken(subscriber.confirmTokenHash, hash, 'confirm');
+      await deps.store.putToken(subscriber.manageTokenHash, hash, 'manage');
+      const written = current
+        ? await deps.store.update(hash, subscriber, current.etag)
+        : await deps.store.create(hash, subscriber);
+      if (!written.modified || written.etag === undefined) {
+        await Promise.allSettled([
+          deps.store.deleteToken(subscriber.confirmTokenHash),
+          deps.store.deleteToken(subscriber.manageTokenHash),
+        ]);
+        continue;
+      }
+
+      try {
+        await deps.mailer.send(
+          confirmationEmail({
+            to: email,
+            firstName,
+            confirmUrl: `${deps.siteUrl}/api/confirm?token=${confirmToken}`,
+          }),
+        );
+      } catch (error) {
+        // Roll back only if this generation is still current. A concurrent
+        // confirm or resend wins instead of being overwritten by cleanup.
+        const retryable = existing ?? { ...subscriber, confirmSentAt: new Date(0).toISOString() };
+        await deps.store.update(hash, retryable, written.etag).catch(() => undefined);
+        await Promise.allSettled([
+          deps.store.deleteToken(subscriber.confirmTokenHash),
+          deps.store.deleteToken(subscriber.manageTokenHash),
+        ]);
+        throw error;
+      }
+
+      if (existing) {
+        await Promise.allSettled([
+          deps.store.deleteToken(existing.confirmTokenHash),
+          deps.store.deleteToken(existing.manageTokenHash),
+        ]);
+      }
+      return 'ok';
+    } catch (error) {
+      await Promise.allSettled([
+        deps.store.deleteToken(subscriber.confirmTokenHash),
+        deps.store.deleteToken(subscriber.manageTokenHash),
+      ]);
+      throw error;
+    }
   }
+  // Another invocation kept winning the CAS; it owns the response and email.
   return 'ok';
 }
 
 /** Complete the double opt-in. The token is single-use. */
 export async function confirm(deps: ServiceDeps, token: string): Promise<boolean> {
   const found = await deps.store.lookupToken(sha256Hex(token));
-  if (found?.kind !== 'confirm') return false;
+  if (found?.kind !== 'confirm' || found.subscriber.status !== 'pending') return false;
 
   const now = (deps.now ?? (() => new Date()))();
-  await deps.store.put(found.emailHash, {
-    ...found.subscriber,
-    status: 'confirmed',
-    confirmedAt: now.toISOString(),
-  });
-  await deps.store.deleteToken(sha256Hex(token));
+  const updated = await deps.store.update(
+    found.emailHash,
+    {
+      ...found.subscriber,
+      status: 'confirmed',
+      confirmedAt: now.toISOString(),
+    },
+    found.etag,
+  );
+  if (!updated.modified) return false;
+  await deps.store.deleteToken(sha256Hex(token)).catch(() => undefined);
   return true;
 }
 
@@ -149,6 +171,26 @@ export async function confirm(deps: ServiceDeps, token: string): Promise<boolean
 export async function unsubscribe(deps: ServiceDeps, token: string): Promise<boolean> {
   const found = await deps.store.lookupToken(sha256Hex(token));
   if (found?.kind !== 'manage') return false;
-  await deps.store.delete(found.emailHash);
+  // Blobs has conditional writes but no conditional delete. Replace the
+  // authoritative record with a PII-free tombstone so an old request cannot
+  // delete or restore a concurrent newer generation.
+  const removed = await deps.store.update(
+    found.emailHash,
+    {
+      email: '',
+      tables: [],
+      status: 'deleted',
+      createdAt: '',
+      confirmSentAt: '',
+      confirmTokenHash: '',
+      manageTokenHash: '',
+    },
+    found.etag,
+  );
+  if (!removed.modified) return false;
+  await Promise.allSettled([
+    deps.store.deleteToken(found.subscriber.confirmTokenHash),
+    deps.store.deleteToken(found.subscriber.manageTokenHash),
+  ]);
   return true;
 }
