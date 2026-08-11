@@ -13,8 +13,10 @@ import { loadAliases } from './core/config.js';
 import { isDataset, mergeDataset, type Dataset } from './core/dataset.js';
 import { allSources, dueSources } from './core/schedule.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
+import { laggingSources, postingSnapshot } from './core/posting.js';
+import { historyKv, readHistory, recordSnapshot } from './store/history.js';
 import { unfilteredSources, DEFAULT_SECTION_OPTIONS, SECTIONS } from './core/sections.js';
-import type { ProgressUpdate } from './core/types.js';
+import type { ProgressUpdate, VenueDay } from './core/types.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
 import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
 
@@ -180,6 +182,10 @@ try {
   await mkdir(dirname(options.out), { recursive: true });
   await writeFile(options.out, JSON.stringify(dataset), 'utf8');
 
+  // Posting depth is measured on the freshly scraped days only: carried-over
+  // days describe what a source had posted when *its* run happened.
+  await recordPosting(result.days, from);
+
   const seconds = ((Date.now() - started) / 1000).toFixed(0);
   const carried = dataset.days.length - result.days.length;
   log(
@@ -192,4 +198,37 @@ try {
   process.exitCode = 1;
 } finally {
   await session.close();
+}
+
+/**
+ * Keep a record of how far ahead each source had published, and say so when a
+ * source is posting materially less far than it usually does.
+ *
+ * Internal awareness only, and never fatal: a scrape that produced a good
+ * dataset must not fail because a bookkeeping write did.
+ */
+async function recordPosting(days: readonly VenueDay[], today: string): Promise<void> {
+  if (process.env['NETLIFY_SITE_ID'] === undefined) return;
+  try {
+    const kv = historyKv();
+    const snapshot = postingSnapshot(days, today);
+    const history = await readHistory(kv);
+    await recordSnapshot(kv, snapshot, new Date().toISOString());
+
+    for (const source of snapshot.sources) {
+      log(
+        `[posting] ${source.sourceId}: ${String(source.solidDays)} solid days ` +
+          `(${String(source.contiguousDays)} contiguous), ` +
+          `reaches ${source.lastDate} (${String(source.datesListed)} dates listed)`,
+      );
+    }
+    for (const lag of laggingSources(snapshot, history)) {
+      log(
+        `[posting] ${lag.sourceId} is posting ${String(lag.now)} days ahead, ` +
+          `against a usual ${String(lag.typical)} — schedule may be late.`,
+      );
+    }
+  } catch (error) {
+    log(`[posting] could not record depth: ${error instanceof Error ? error.message : 'unknown'}`);
+  }
 }

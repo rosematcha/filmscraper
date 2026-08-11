@@ -1,4 +1,4 @@
-import { blobsKv } from '../../src/subscribers/blobs.js';
+import { blobsKv } from '../../src/store/blobs.js';
 import { resendMailer } from '../../src/subscribers/mailer.js';
 import { subscribe, type ServiceDeps } from '../../src/subscribers/service.js';
 import { SubscriberStore } from '../../src/subscribers/store.js';
@@ -63,7 +63,7 @@ export default async (request: Request): Promise<Response> => {
   }
 
   const deps: ServiceDeps = {
-    store: new SubscriberStore(blobsKv()),
+    store: new SubscriberStore(blobsKv('subscribers')),
     mailer: resendMailer({ apiKey, from }),
     siteUrl,
   };

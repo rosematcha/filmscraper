@@ -1,4 +1,4 @@
-import type { KeyValue } from './kv.js';
+import type { KeyValue } from '../store/kv.js';
 
 export type TokenKind = 'confirm' | 'manage';
 

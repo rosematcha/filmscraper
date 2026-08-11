@@ -1,4 +1,4 @@
-import { blobsKv } from '../../src/subscribers/blobs.js';
+import { blobsKv } from '../../src/store/blobs.js';
 import { actionPage, messagePage } from '../../src/subscribers/html.js';
 import { unsubscribe, type ServiceDeps } from '../../src/subscribers/service.js';
 import { SubscriberStore } from '../../src/subscribers/store.js';
@@ -12,7 +12,7 @@ function html(status: number, body: string): Response {
 
 function deps(): ServiceDeps {
   return {
-    store: new SubscriberStore(blobsKv()),
+    store: new SubscriberStore(blobsKv('subscribers')),
     mailer: {
       send: () => Promise.reject(new Error('unsubscribe sends no email')),
     },

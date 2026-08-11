@@ -2,19 +2,19 @@ import { getStore, type Store } from '@netlify/blobs';
 import type { KeyValue } from './kv.js';
 
 /**
- * The subscriber list in Netlify Blobs.
+ * A named Netlify Blobs store.
  *
- * Inside a function the store configures itself from the runtime. The weekly
- * digest job runs in GitHub Actions instead, where NETLIFY_SITE_ID and
- * NETLIFY_API_TOKEN supply what the runtime would have.
+ * Inside a function the store configures itself from the runtime. Jobs that
+ * run in GitHub Actions instead pass NETLIFY_SITE_ID and NETLIFY_API_TOKEN,
+ * which supply what the runtime would have.
  */
-export function blobsKv(): KeyValue {
+export function blobsKv(name: string): KeyValue {
   const siteID = process.env['NETLIFY_SITE_ID'];
   const token = process.env['NETLIFY_API_TOKEN'];
   const store: Store =
     siteID !== undefined && token !== undefined
-      ? getStore({ name: 'subscribers', siteID, token })
-      : getStore('subscribers');
+      ? getStore({ name, siteID, token })
+      : getStore(name);
   return {
     get: (key) => store.get(key, { type: 'text' }),
     set: async (key, value) => {
