@@ -35,9 +35,9 @@ export async function recordSnapshot(
 /** Every snapshot kept, oldest first. The backlog is one small blob per run. */
 export async function readHistory(kv: KeyValue): Promise<PostingSnapshot[]> {
   const keys = (await kv.list(PREFIX)).sort();
+  const snapshots = await Promise.all(keys.map((key) => kv.get(key)));
   const out: PostingSnapshot[] = [];
-  for (const key of keys) {
-    const raw = await kv.get(key);
+  for (const raw of snapshots) {
     if (raw === null) continue;
     try {
       const parsed: unknown = JSON.parse(raw);

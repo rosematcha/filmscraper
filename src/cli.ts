@@ -24,8 +24,9 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_WINDOW_DAYS = 7;
 
 function addDays(date: string, days: number): string {
-  const d = new Date(`${date}T12:00:00`);
-  d.setDate(d.getDate() + days);
+  const [year, month, day] = date.split('-').map(Number);
+  const d = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1));
+  d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
@@ -36,7 +37,8 @@ function isoDate(value: string): string {
 
 function positiveNumber(value: string): number {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new InvalidArgumentError('expected a positive number');
+  if (!Number.isFinite(parsed) || parsed <= 0)
+    throw new InvalidArgumentError('expected a positive number');
   return parsed;
 }
 
@@ -75,7 +77,11 @@ const program = new Command()
   .option(
     '-s, --sources <ids>',
     `comma-separated sources (${SOURCES.map((x) => x.id).join(', ')})`,
-    (value: string) => value.split(',').map((v) => v.trim()).filter(Boolean),
+    (value: string) =>
+      value
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean),
     [...DEFAULT_SOURCE_IDS],
   )
   .option(
@@ -88,7 +94,10 @@ const program = new Command()
     '-T, --tables <ids>',
     `tables to build — ${SECTIONS.map((s) => s.id).join(', ')}, or "all" / "none"`,
     (value: string) => {
-      const ids = value.split(',').map((v) => v.trim()).filter(Boolean);
+      const ids = value
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean);
       if (ids.includes('none')) return [];
       if (ids.includes('all')) return SECTIONS.map((s) => s.id);
       const unknownIds = ids.filter((id) => !SECTIONS.some((s) => s.id === id));
@@ -104,7 +113,10 @@ const program = new Command()
     '-x, --exclude-chains <chains>',
     `drop these chains (${chainIds().join(', ')})`,
     (value: string) => {
-      const ids = value.split(',').map((v) => v.trim()).filter(Boolean);
+      const ids = value
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean);
       const resolved = ids.map((id) => {
         const chain = resolveChain(id);
         if (chain === null) throw new InvalidArgumentError(`unknown chain: ${id}`);

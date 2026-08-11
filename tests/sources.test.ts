@@ -219,6 +219,10 @@ describe('iCal parsing', () => {
     expect(icalTime('20260803T001500')).toBe('12:15a');
   });
 
+  it('converts a UTC timestamp into the venue’s local time', () => {
+    expect(icalTime('20260804T013000Z', 'America/Chicago')).toBe('8:30p');
+  });
+
   it('unfolds continuation lines', () => {
     const folded =
       'BEGIN:VEVENT\r\nDTSTART:20260803\r\nSUMMARY:A very long\r\n  title\r\nEND:VEVENT';

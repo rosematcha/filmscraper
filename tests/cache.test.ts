@@ -36,4 +36,27 @@ describe('DiskCache', () => {
     expect(await disk.wrap(key, flaky)).toEqual({ lat: 29.42 });
     expect(calls).toBe(2);
   });
+
+  it('coalesces concurrent misses for the same key', async () => {
+    const disk = cache('concurrent');
+    const key = `zip-${String(process.pid)}-concurrent`;
+    let calls = 0;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const compute = async (): Promise<number> => {
+      calls++;
+      await gate;
+      return 42;
+    };
+
+    const first = disk.wrap(key, compute);
+    const second = disk.wrap(key, compute);
+    await Promise.resolve();
+    release?.();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([42, 42]);
+    expect(calls).toBe(1);
+  });
 });

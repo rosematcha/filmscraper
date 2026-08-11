@@ -28,7 +28,10 @@ function tidyTitle(summary: string): string {
   if (trimmed !== trimmed.toUpperCase()) return trimmed;
   return trimmed
     .toLowerCase()
-    .replace(/(^|[\s:('"-])([a-z])/g, (_, lead: string, letter: string) => lead + letter.toUpperCase());
+    .replace(
+      /(^|[\s:('"-])([a-z])/g,
+      (_, lead: string, letter: string) => lead + letter.toUpperCase(),
+    );
 }
 
 /**
@@ -62,7 +65,8 @@ export class DriveInSource implements Source {
         headers: browserHeaders('text/calendar,text/html;q=0.9,*/*;q=0.8'),
         redirect: 'follow',
       });
-      if (!response.ok) throw new Error(`HTTP ${String(response.status)} ${response.statusText}`.trim());
+      if (!response.ok)
+        throw new Error(`HTTP ${String(response.status)} ${response.statusText}`.trim());
       text = await response.text();
     } catch (error) {
       return {
@@ -82,7 +86,7 @@ export class DriveInSource implements Source {
       if (!date || date < first || date > last) continue;
       const film = tidyTitle(event.summary);
       if (!film) continue;
-      const time = icalTime(event.start);
+      const time = icalTime(event.start, event.timeZone ?? this.venue.timeZone);
       screenings.push({
         film,
         url: event.url || this.venue.icalUrl,

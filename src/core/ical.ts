@@ -12,7 +12,10 @@ export interface IcalEvent {
 
 /** RFC 5545 folds long lines by starting continuations with a space or tab. */
 function unfold(text: string): string[] {
-  return text.replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '').split('\n');
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\n[ \t]/g, '')
+    .split('\n');
 }
 
 /** `\,` `\;` `\n` escapes defined by RFC 5545. */
@@ -101,12 +104,34 @@ export function icalDate(start: string, fallbackZone: string): string | null {
   }).format(instant);
 }
 
-/** `20260803T204000` -> `"8:40p"`. */
-export function icalTime(start: string): string | null {
+/** `20260803T204000` -> `"8:40p"`; UTC instants are converted to the venue zone. */
+export function icalTime(start: string, fallbackZone = 'UTC'): string | null {
   const match = /T(\d{2})(\d{2})/.exec(start);
   if (!match) return null;
-  const hour = Number(match[1]);
-  const minute = match[2] ?? '00';
+  let hour = Number(match[1]);
+  let minute = match[2] ?? '00';
+  const utc = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(start);
+  if (utc) {
+    const instant = new Date(
+      Date.UTC(
+        Number(utc[1]),
+        Number(utc[2]) - 1,
+        Number(utc[3]),
+        Number(utc[4]),
+        Number(utc[5]),
+        Number(utc[6]),
+      ),
+    );
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: fallbackZone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(instant);
+    hour = Number(parts.find((part) => part.type === 'hour')?.value);
+    minute = parts.find((part) => part.type === 'minute')?.value ?? minute;
+  }
+  if (!Number.isFinite(hour)) return null;
   const half = hour >= 12 ? 'p' : 'a';
   const display = hour % 12 === 0 ? 12 : hour % 12;
   return `${String(display)}:${minute}${half}`;

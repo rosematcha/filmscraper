@@ -6,7 +6,7 @@
   # A git push must not clobber the nightly data with an empty build, so the
   # current dataset is pulled from the live site first. Missing data is not an
   # error: the site says so plainly and the next scheduled scrape fills it in.
-  command = "pnpm install --frozen-lockfile && mkdir -p web/public/data && (curl -sfS --max-time 30 \"$URL/data/latest.json\" -o web/public/data/latest.json || echo 'no published dataset yet') && pnpm --filter filmscraper-web build"
+  command = "pnpm install --frozen-lockfile && mkdir -p web/public/data && dataset_tmp=$(mktemp) && if curl -sfS --max-time 30 \"$URL/data/latest.json\" -o \"$dataset_tmp\" && node -e \"JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))\" \"$dataset_tmp\"; then mv \"$dataset_tmp\" web/public/data/latest.json; else rm -f \"$dataset_tmp\"; echo 'no valid published dataset available'; fi && pnpm --filter filmscraper-web build"
   publish = "web/dist"
 
 [build.environment]

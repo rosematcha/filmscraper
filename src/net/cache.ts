@@ -18,6 +18,9 @@ interface Entry<T> {
  * every run is pure waste — and pure load on someone else's servers.
  */
 export class DiskCache {
+  /** Concurrent callers for the same fact share one lookup and one write. */
+  private readonly pending = new Map<string, Promise<unknown>>();
+
   constructor(private readonly namespace: string) {}
 
   private path(key: string): string {
@@ -66,8 +69,20 @@ export class DiskCache {
   ): Promise<T | null> {
     const hit = await this.read(key, maxAgeMs);
     if (hit) return hit.value as T;
-    const value = await compute();
-    if (value !== null) await this.write(key, value);
-    return value;
+
+    const pending = this.pending.get(key);
+    if (pending) return pending as Promise<T | null>;
+
+    const lookup = (async (): Promise<T | null> => {
+      const value = await compute();
+      if (value !== null) await this.write(key, value);
+      return value;
+    })();
+    this.pending.set(key, lookup);
+    try {
+      return await lookup;
+    } finally {
+      if (this.pending.get(key) === lookup) this.pending.delete(key);
+    }
   }
 }
