@@ -3,9 +3,10 @@ import { filterDataset, isDataset, type Dataset } from '@core/core/dataset.js';
 import { unanchoredVenues } from '@core/core/filters.js';
 import type { Coords } from '@core/core/geo.js';
 import { renderMarkdown, renderRows, type SortedMovie } from '@core/core/markdown.js';
-import { shortenTheater } from '@core/core/notes.js';
+import { expiredTodayWarning, horizonWarning, pastDatesWarning } from '@core/core/pipeline.js';
+import { dateRange, shortenTheater } from '@core/core/notes.js';
 import { unfilteredSources, type SectionOptions } from '@core/core/sections.js';
-import type { RenderOptions, ScrapeResult, Theater } from '@core/core/types.js';
+import type { RenderOptions, ScrapeResult, ScrapeWarning, Theater } from '@core/core/types.js';
 
 import aliasesJson from '../../config/aliases.json';
 
@@ -40,6 +41,7 @@ export interface RenderedDataset {
   markdown: string;
   theaters: Theater[];
   movieCount: number;
+  warnings: readonly string[];
   /**
    * Venues the anchor could not re-measure, because the scrape that produced
    * the dataset predates stored coordinates. Their distance is still relative
@@ -78,12 +80,27 @@ export function renderDataset(
   const theaters = [...new Map(days.map((d) => [d.theater.name, d.theater])).values()].sort(
     (a, b) => a.miles - b.miles || a.name.localeCompare(b.name),
   );
-  const dates: string[] = [];
-  for (let d = new Date(`${from}T12:00:00`); d <= new Date(`${to}T12:00:00`); d.setDate(d.getDate() + 1)) {
-    dates.push(d.toISOString().slice(0, 10));
-  }
+  const dates = dateRange(from, to);
 
   const movies = aggregate(days, theaters, { aliases, keepYears: options.keepYears });
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const warnings = dataset.warnings.filter(
+    (warning) => warning.kind === 'page-error' || warning.kind === 'radius-truncated',
+  );
+  const dynamicWarnings = [
+    expiredTodayWarning(days, today),
+    pastDatesWarning(dates, today),
+    horizonWarning(
+      dataset.horizon < from ? from : dataset.horizon > to ? to : dataset.horizon,
+      dates,
+    ),
+  ].filter((warning): warning is ScrapeWarning => warning !== null);
+  warnings.push(...dynamicWarnings);
   const result: ScrapeResult = {
     request: { zip: dataset.zip, from, to, radiusMiles: filters.radiusMiles },
     dates,
@@ -93,15 +110,19 @@ export function renderDataset(
     knownFrom: dataset.knownFrom < from ? from : dataset.knownFrom,
     theaters,
     movies,
-    warnings: dataset.warnings,
+    warnings,
     days,
   };
 
+  const rows = renderRows(result, options, aliases.theaterNames, sections);
+  const table = renderMarkdown(result, options, aliases.theaterNames, sections);
+  const warningMarkdown = warnings.map((warning) => `> **Note:** ${warning.message}`).join('\n>\n');
   return {
-    rows: renderRows(result, options, aliases.theaterNames, sections),
-    markdown: renderMarkdown(result, options, aliases.theaterNames, sections),
+    rows,
+    markdown: warningMarkdown === '' ? table : `${table}\n\n${warningMarkdown}`,
     theaters,
     movieCount: new Set(movies.map((m) => m.title)).size,
+    warnings: warnings.map((warning) => warning.message),
     unanchored: unanchoredVenues(days, filters.anchor),
   };
 }

@@ -6,7 +6,6 @@ import type { Coords } from '@core/core/geo.js';
 import type { SortOrder } from '@core/core/types.js';
 import { DEFAULT_SECTION_OPTIONS } from '@core/core/sections.js';
 import { SECTIONS, SORT_ORDERS, useTablePrefs, type ViewFlags } from './tables';
-import Subscribe from './Subscribe';
 import { Menu, Section, Stepper, Word } from './controls';
 
 /**
@@ -59,8 +58,9 @@ function today(): string {
 }
 
 function addDays(date: string, days: number): string {
-  const d = new Date(`${date}T12:00:00`);
-  d.setDate(d.getDate() + days);
+  const [year, month, day] = date.split('-').map(Number);
+  const d = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1));
+  d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
@@ -132,9 +132,7 @@ function movieRow(row: Row): React.JSX.Element {
       <td className="reach" tabIndex={0}>
         {reach(row.theaterCount, row.dateCount)}
         <span className="reach__detail" role="tooltip">
-          <span className="reach__heading">
-            {row.theaterCount === 1 ? 'Theater' : 'Theaters'}
-          </span>
+          <span className="reach__heading">{row.theaterCount === 1 ? 'Theater' : 'Theaters'}</span>
           <span className="reach__list">{row.theaters.join(', ')}</span>
           <span className="reach__heading">{row.dateCount === 1 ? 'Date' : 'Dates'}</span>
           <span className="reach__list">{compactDates(row.dates)}</span>
@@ -156,22 +154,31 @@ export default function App(): React.JSX.Element {
 
   const { tables, flags, sort, setTable, setFlag, setSort } = useTablePrefs();
   const [dataset, setDataset] = useState<Dataset | null>(null);
+  const [datasetState, setDatasetState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const seededRadius = useRef(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [openSections, setOpenSections] = useState<ReadonlySet<string>>(new Set());
-  const [showSignup, setShowSignup] = useState(false);
 
   // The site has no API: it reads whatever the scheduled scrape published and
   // filters that in the browser.
   useEffect(() => {
     void loadDataset().then((d) => {
-      if (!d) return;
+      if (!d) {
+        setDatasetState('failed');
+        return;
+      }
       setDataset(d);
-      setFrom(d.from);
-      setTo(d.to < addDays(d.from, DEFAULT_WINDOW_DAYS - 1) ? d.to : addDays(d.from, DEFAULT_WINDOW_DAYS - 1));
+      setDatasetState('ready');
+      const first = start < d.from ? d.from : start > d.to ? d.to : start;
+      setFrom(first);
+      setTo(
+        d.to < addDays(first, DEFAULT_WINDOW_DAYS - 1)
+          ? d.to
+          : addDays(first, DEFAULT_WINDOW_DAYS - 1),
+      );
     });
-  }, []);
+  }, [start]);
 
   // The radius can only narrow what the published run covered, so the
   // dataset's own reach is the honest starting point.
@@ -258,15 +265,19 @@ export default function App(): React.JSX.Element {
 
   const copy = useCallback(() => {
     if (!view) return;
-    void navigator.clipboard.writeText(view.markdown).then(() => {
-      setCopied(true);
-      // Inline label change instead of a toast; it reverts on its own.
-      setTimeout(() => {
-        setCopied(false);
-      }, 2000);
-    });
+    setCopyState('idle');
+    void navigator.clipboard
+      .writeText(view.markdown)
+      .then(() => {
+        setCopyState('copied');
+        setTimeout(() => {
+          setCopyState('idle');
+        }, 2000);
+      })
+      .catch(() => {
+        setCopyState('failed');
+      });
   }, [view]);
-
 
   /**
    * The main table and the broken-out tables, kept apart.
@@ -323,6 +334,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <main>
+      <h1 className="sr-only">Film listings</h1>
       {/* The published dataset covers one ZIP at one radius, so the window,
           distance and anchor are the only things worth adjusting. */}
       <form
@@ -357,12 +369,7 @@ export default function App(): React.JSX.Element {
         </label>
         <label>
           Miles
-          <Stepper
-            value={radius}
-            min={1}
-            max={dataset?.radiusMiles ?? 100}
-            onChange={setRadius}
-          />
+          <Stepper value={radius} min={1} max={dataset?.radiusMiles ?? 100} onChange={setRadius} />
         </label>
         {/* Distance is measured from here rather than from the ZIP centroid,
             which is what makes "within 15 miles of my house" answerable. */}
@@ -443,11 +450,7 @@ export default function App(): React.JSX.Element {
           ))}
         </Menu>
 
-        <Menu
-          label="other"
-          count={activeFlags > 0 ? String(activeFlags) : undefined}
-          align="right"
-        >
+        <Menu label="other" count={activeFlags > 0 ? String(activeFlags) : undefined} align="right">
           {VIEW_FLAGS.map(([key, label, hint]) => (
             <Word
               key={key}
@@ -479,19 +482,21 @@ export default function App(): React.JSX.Element {
 
       {invalidRange && <p className="status error">“To” is before “from”.</p>}
 
-
-      {rows.length === 0 && dataset && (
+      {rows.length === 0 && dataset && !invalidRange && view && (
         <p className="empty">
           Nothing playing in that window within {effectiveRadius} miles of{' '}
           {anchor ? anchorText.trim() : placeName(dataset.zip)}.
         </p>
       )}
 
-      {!dataset && (
-        <p className="empty">
-          No listings published yet. The scrape runs daily at 1pm Central; this page
-          fills in after the first run.
-        </p>
+      {datasetState === 'loading' && <p className="empty">Loading listings…</p>}
+
+      {datasetState === 'failed' && (
+        <p className="empty">Listings could not be loaded. Reload the page to try again.</p>
+      )}
+
+      {dataset && !invalidRange && !view && (
+        <p className="empty error">The published listings could not be read.</p>
       )}
 
       {view && rows.length > 0 && (
@@ -508,10 +513,28 @@ export default function App(): React.JSX.Element {
                 {showMarkdown ? 'hide markdown' : 'show markdown'}
               </button>
               <button type="button" onClick={copy}>
-                {copied ? 'copied' : 'copy markdown'}
+                {copyState === 'copied'
+                  ? 'copied'
+                  : copyState === 'failed'
+                    ? 'copy failed'
+                    : 'copy markdown'}
               </button>
             </span>
           </div>
+
+          {view.warnings.length > 0 && (
+            <details className="warning">
+              <summary>
+                Listings are partial · {view.warnings.length}{' '}
+                {view.warnings.length === 1 ? 'note' : 'notes'}
+              </summary>
+              <ul>
+                {view.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </details>
+          )}
 
           {showMarkdown ? (
             <pre>{view.markdown}</pre>
@@ -543,6 +566,13 @@ export default function App(): React.JSX.Element {
                       }}
                     >
                       <table>
+                        <thead className="sr-only">
+                          <tr>
+                            <th>movie</th>
+                            <th>notes</th>
+                            <th>reach</th>
+                          </tr>
+                        </thead>
                         <tbody>{section.rows.map(movieRow)}</tbody>
                       </table>
                     </Section>
@@ -554,23 +584,8 @@ export default function App(): React.JSX.Element {
         </>
       )}
 
-      {showSignup && <Subscribe defaultTables={tables} />}
-
       <footer>
-        Maintained by <a href="https://rosematcha.com">Reese Lundquist.</a>{' '}
-        {!showSignup && (
-          <>
-            ·{' '}
-            <button
-              type="button"
-              onClick={() => {
-                setShowSignup(true);
-              }}
-            >
-              get this weekly by email
-            </button>
-          </>
-        )}
+        Maintained by <a href="https://rosematcha.com">Reese Lundquist.</a>
       </footer>
     </main>
   );

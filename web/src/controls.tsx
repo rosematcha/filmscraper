@@ -49,6 +49,7 @@ export function Menu({
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLSpanElement | null>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null);
 
   // A click anywhere else, or Escape, closes it. Without this the menu
   // outlives the interest in it.
@@ -58,7 +59,10 @@ export function Menu({
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        setOpen(false);
+        trigger.current?.focus();
+      }
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -71,6 +75,7 @@ export function Menu({
   return (
     <span className="menu" ref={root}>
       <button
+        ref={trigger}
         type="button"
         className="menu__btn"
         aria-expanded={open}
@@ -128,10 +133,7 @@ export function Stepper({
   readonly step?: number;
   readonly onChange: (next: number) => void;
 }): React.JSX.Element {
-  const clamp = useCallback(
-    (next: number) => Math.min(max, Math.max(min, next)),
-    [min, max],
-  );
+  const clamp = useCallback((next: number) => Math.min(max, Math.max(min, next)), [min, max]);
   return (
     <span className="stepper">
       <button

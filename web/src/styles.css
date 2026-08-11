@@ -47,6 +47,18 @@
   box-sizing: border-box;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 body {
   margin: 0;
   background: var(--paper);
@@ -221,6 +233,19 @@ button:disabled {
   font-size: 0.8125rem;
   color: var(--muted);
   max-width: 62ch;
+}
+
+.warning summary {
+  cursor: pointer;
+}
+
+.warning ul {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.warning li + li {
+  margin-top: 0.5rem;
 }
 
 /* --- results --- */
