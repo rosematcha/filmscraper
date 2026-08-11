@@ -24,7 +24,7 @@ on:
 
 # One run at a time: two scrapes deploying at once would race.
 concurrency:
-  group: publish
+  group: netlify-production
   cancel-in-progress: false
 
 jobs:

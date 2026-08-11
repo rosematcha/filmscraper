@@ -26,3 +26,49 @@ jobs:
 
       # Tests run against committed fixtures and never hit the network.
       - run: pnpm test
+
+  deploy:
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: netlify-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # This runs only after acquiring the same lock as the scheduled scrape,
+      # so the code deploy always carries the newest published dataset.
+      - name: Preserve current listings
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          test -n "$SITE_URL"
+          mkdir -p web/public/data
+          dataset_tmp=$(mktemp)
+          curl -fsS --max-time 30 "$SITE_URL/data/latest.json" -o "$dataset_tmp"
+          node -e "const d=JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')); if(d.version!==2 || !Array.isArray(d.days) || typeof d.generatedAt!=='string') process.exit(1)" "$dataset_tmp"
+          mv "$dataset_tmp" web/public/data/latest.json
+
+      - run: pnpm --filter filmscraper-web build
+
+      - name: Deploy to Netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: >
+          pnpm --package=netlify-cli@17 dlx netlify deploy
+          --dir web/dist
+          --prod
+          --site "$NETLIFY_SITE_ID"
+          --filter filmscraper
+          --message "code ${{ github.sha }}"
