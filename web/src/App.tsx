@@ -4,7 +4,7 @@ import { geocodeAnchor } from './geocode';
 import { chainIds, chainLabel } from '@core/core/chains.js';
 import type { Coords } from '@core/core/geo.js';
 import { DEFAULT_SECTION_OPTIONS } from '@core/core/sections.js';
-import { SECTIONS, useTablePrefs } from './tables';
+import { SECTIONS, useTablePrefs, type ViewFlags } from './tables';
 import Subscribe from './Subscribe';
 import { Menu, Section, Stepper, Word } from './controls';
 
@@ -24,6 +24,19 @@ function placeName(zip: string): string {
 
 /** A week spans a full theatrical program change, so it is the useful default. */
 const DEFAULT_WINDOW_DAYS = 7;
+
+/**
+ * The settings that change how a row reads, in menu order.
+ *
+ * Each one is off by default because each adds words to the Notes cell, and a
+ * blank Notes cell is a correct and common answer.
+ */
+const VIEW_FLAGS: readonly [keyof ViewFlags, string, string][] = [
+  ['showAccessibility', 'Show open captions', 'Names the captioned bookings'],
+  ['showLanguage', 'Show subtitles and dubs', 'Names subtitled and dubbed showings'],
+  ['keepYears', 'Keep years in titles', 'Leaves “(2026)” where the listing had it'],
+  ['excludeForeign', 'Drop non-English entirely', 'Removes them rather than tabling them'],
+];
 
 /** Today in the market's timezone, which is the only window that makes sense as a default. */
 function today(): string {
@@ -131,7 +144,7 @@ export default function App(): React.JSX.Element {
   const [anchor, setAnchor] = useState<Coords | null>(null);
   const [anchorState, setAnchorState] = useState<'idle' | 'looking' | 'failed'>('idle');
 
-  const { tables, excludeForeign, setTable, setExcludeForeign } = useTablePrefs();
+  const { tables, flags, setTable, setFlag } = useTablePrefs();
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const seededRadius = useRef(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
@@ -195,11 +208,15 @@ export default function App(): React.JSX.Element {
         from,
         to,
         { radiusMiles: effectiveRadius, excludedChains: new Set(excludedChains), anchor },
-        { keepYears: false, showAccessibility: false, showLanguage: false },
+        {
+          keepYears: flags.keepYears,
+          showAccessibility: flags.showAccessibility,
+          showLanguage: flags.showLanguage,
+        },
         {
           ...DEFAULT_SECTION_OPTIONS,
           tables,
-          excludeForeign,
+          excludeForeign: flags.excludeForeign,
           currentYear: Number(from.slice(0, 4)),
         },
         ALIASES,
@@ -207,7 +224,7 @@ export default function App(): React.JSX.Element {
     } catch {
       return null;
     }
-  }, [dataset, from, to, effectiveRadius, tables, excludeForeign, excludedChains, anchor]);
+  }, [dataset, from, to, effectiveRadius, tables, flags, excludedChains, anchor]);
 
   const rows = useMemo(
     () =>
@@ -267,6 +284,9 @@ export default function App(): React.JSX.Element {
       }),
     };
   }, [rows]);
+
+  /** How many view flags are on, so the shut menu says whether it holds any. */
+  const activeFlags = VIEW_FLAGS.filter(([key]) => flags[key]).length;
 
   const toggleSection = useCallback((id: string) => {
     setOpenSections((prev) => {
@@ -396,14 +416,22 @@ export default function App(): React.JSX.Element {
           ))}
         </Menu>
 
-        <Menu label="other" align="right">
-          <Word
-            on={excludeForeign}
-            label="Drop non-English entirely"
-            onToggle={() => {
-              setExcludeForeign(!excludeForeign);
-            }}
-          />
+        <Menu
+          label="other"
+          count={activeFlags > 0 ? String(activeFlags) : undefined}
+          align="right"
+        >
+          {VIEW_FLAGS.map(([key, label, hint]) => (
+            <Word
+              key={key}
+              on={flags[key]}
+              label={label}
+              hint={hint}
+              onToggle={() => {
+                setFlag(key, !flags[key]);
+              }}
+            />
+          ))}
         </Menu>
       </form>
 

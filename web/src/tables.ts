@@ -16,12 +16,36 @@ const KEY = 'filmscraper.tables.v1';
 /** The one table another setting can contradict. */
 const FOREIGN_ID = 'foreign';
 
+/**
+ * Settings that change how a row reads rather than which table it lands in.
+ *
+ * Kept in one record so adding another is a key here and a word in the menu,
+ * not a field threaded through three components.
+ */
+export interface ViewFlags {
+  /** Drop non-English releases from the output entirely. */
+  readonly excludeForeign: boolean;
+  /** Leave "(2026)" on titles instead of normalizing it away. */
+  readonly keepYears: boolean;
+  /** Name open-caption and other accessibility bookings in the Notes cell. */
+  readonly showAccessibility: boolean;
+  /** Name subtitled and dubbed bookings in the Notes cell. */
+  readonly showLanguage: boolean;
+}
+
+export const DEFAULT_FLAGS: ViewFlags = {
+  excludeForeign: false,
+  keepYears: false,
+  showAccessibility: false,
+  showLanguage: false,
+};
+
 interface StoredTables {
   /** Tables explicitly turned on. */
   readonly on: readonly string[];
   /** Tables explicitly turned off, so a new default-on table is not resurrected. */
   readonly off: readonly string[];
-  readonly excludeForeign: boolean;
+  readonly flags: ViewFlags;
 }
 
 function read(): StoredTables | null {
@@ -33,10 +57,18 @@ function read(): StoredTables | null {
     const record = parsed as Record<string, unknown>;
     const ids = (value: unknown): string[] =>
       Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+    // `excludeForeign` sat at the top level before the flags record existed.
+    const stored = (record.flags ?? record) as Record<string, unknown>;
+    const flag = (key: keyof ViewFlags): boolean => stored[key] === true;
     return {
       on: ids(record.on),
       off: ids(record.off),
-      excludeForeign: record.excludeForeign === true,
+      flags: {
+        excludeForeign: flag('excludeForeign'),
+        keepYears: flag('keepYears'),
+        showAccessibility: flag('showAccessibility'),
+        showLanguage: flag('showLanguage'),
+      },
     };
   } catch {
     // A private-mode browser or a hand-edited entry: the defaults are a
@@ -71,9 +103,9 @@ function resolve(stored: StoredTables | null): string[] {
 
 export interface TablePrefs {
   readonly tables: string[];
-  readonly excludeForeign: boolean;
+  readonly flags: ViewFlags;
   readonly setTable: (id: string, enabled: boolean) => void;
-  readonly setExcludeForeign: (value: boolean) => void;
+  readonly setFlag: (key: keyof ViewFlags, value: boolean) => void;
 }
 
 /** The table checklist, remembered across visits. */
@@ -86,29 +118,33 @@ export function useTablePrefs(): TablePrefs {
 
   const setTable = useCallback((id: string, enabled: boolean) => {
     setStored((prev) => {
-      const base = prev ?? { on: [], off: [], excludeForeign: false };
+      const base = prev ?? { on: [], off: [], flags: DEFAULT_FLAGS };
       const next: StoredTables = {
         on: enabled ? [...new Set([...base.on, id])] : base.on.filter((x) => x !== id),
         off: enabled ? base.off.filter((x) => x !== id) : [...new Set([...base.off, id])],
         // Asking for the table means wanting to see those films, which is the
         // opposite of dropping them. Left to contradict each other, the pair
         // produces a "Not in English" table that can never have a row in it.
-        excludeForeign: enabled && id === FOREIGN_ID ? false : base.excludeForeign,
+        flags:
+          enabled && id === FOREIGN_ID
+            ? { ...base.flags, excludeForeign: false }
+            : base.flags,
       };
       write(next);
       return next;
     });
   }, []);
 
-  const setExcludeForeign = useCallback((value: boolean) => {
+  const setFlag = useCallback((key: keyof ViewFlags, value: boolean) => {
     setStored((prev) => {
-      const base = prev ?? { on: [], off: [], excludeForeign: false };
+      const base = prev ?? { on: [], off: [], flags: DEFAULT_FLAGS };
+      const drops = key === 'excludeForeign' && value;
       // Dropping the films takes their table with it, visibly: the word goes
       // struck through in the same menu rather than the table just vanishing.
       const next: StoredTables = {
-        on: value ? base.on.filter((x) => x !== FOREIGN_ID) : base.on,
-        off: value ? [...new Set([...base.off, FOREIGN_ID])] : base.off,
-        excludeForeign: value,
+        on: drops ? base.on.filter((x) => x !== FOREIGN_ID) : base.on,
+        off: drops ? [...new Set([...base.off, FOREIGN_ID])] : base.off,
+        flags: { ...base.flags, [key]: value },
       };
       write(next);
       return next;
@@ -117,8 +153,8 @@ export function useTablePrefs(): TablePrefs {
 
   return {
     tables,
-    excludeForeign: stored?.excludeForeign ?? false,
+    flags: stored?.flags ?? DEFAULT_FLAGS,
     setTable,
-    setExcludeForeign,
+    setFlag,
   };
 }

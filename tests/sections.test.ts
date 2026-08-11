@@ -315,14 +315,15 @@ describe('open-caption table', () => {
 
 describe('default section options', () => {
   it('splits events and non-English releases out of the box', () => {
+    // The timing tables are deliberately absent: judging whether a run has
+    // ended needs history the posting backlog is still collecting, so they
+    // stay opt-in rather than splitting the table on a single scrape.
     expect([...DEFAULT_SECTION_OPTIONS.tables].sort()).toEqual([
       'drive-in',
       'events',
       'foreign',
       'free',
-      'last-chance',
       'library',
-      'opens',
     ]);
     // Open captions duplicate rows for a minority audience, so that one is the
     // single table left opt-in.

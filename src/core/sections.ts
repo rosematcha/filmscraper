@@ -147,6 +147,12 @@ function playsAt(movie: AggregatedMovie, sourceId: string): boolean {
  * the standing partitions follow. Render order is not claim order: these two
  * carry `claimRank: 1` so they collect only what the identity tables below
  * have not already taken.
+ *
+ * Both start off. Whether a run has ended is judged against how far the
+ * schedule reaches, and one scrape cannot tell a theater that has stopped
+ * booking a film from one that has not posted next week yet. The posting
+ * backlog is accumulating the history that answers it; until then these two
+ * stay a menu away rather than splitting the table on a guess.
  */
 export const SECTIONS: readonly SectionDef[] = [
   {
@@ -156,7 +162,7 @@ export const SECTIONS: readonly SectionDef[] = [
     hint: 'Films that start partway through the window',
     mode: 'claims',
     claimRank: 1,
-    defaultOn: true,
+    defaultOn: false,
     match: (movie, ctx) => {
       const { shape } = classifyRun(movie.dates, ctx);
       return shape === 'opens' || shape === 'presale-opens';
@@ -169,7 +175,7 @@ export const SECTIONS: readonly SectionDef[] = [
     hint: 'Runs that end before the posted schedule does',
     mode: 'claims',
     claimRank: 1,
-    defaultOn: true,
+    defaultOn: false,
     match: (movie, ctx) => classifyRun(movie.dates, ctx).shape === 'closing',
   },
   {
