@@ -3,29 +3,43 @@
  * exists to keep the movie titles the most interesting thing on screen.
  */
 
+/*
+ * Dark is the default: this gets read at night, deciding what to see this
+ * week, and a white page is the wrong thing to hand someone then. Light is
+ * the override, for whoever asks for it.
+ *
+ * Neutrals are tinted warm so nothing reads as pure grey, and --muted sits
+ * above the 4.5:1 contrast floor rather than just below it, which is what
+ * made the settings line hard to read.
+ */
 :root {
-  /* Neutrals tinted warm so nothing reads as pure grey. */
-  --paper: oklch(99% 0.004 85);
-  --ink: oklch(24% 0.008 85);
-  --muted: oklch(52% 0.007 85);
-  --faint: oklch(72% 0.006 85);
-  --rule: oklch(91% 0.005 85);
-  --field: oklch(97% 0.005 85);
-  --link: oklch(46% 0.088 250);
+  --paper: oklch(17% 0.006 85);
+  --ink: oklch(96% 0.006 85);
+  --muted: oklch(78% 0.008 85);
+  --faint: oklch(60% 0.007 85);
+  --rule: oklch(33% 0.006 85);
+  --field: oklch(21% 0.006 85);
+  /* Links carry the ink colour and announce themselves with an underline;
+     a coloured link was the one saturated thing on an otherwise grey page. */
+  --link: oklch(96% 0.006 85);
 
   --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --paper: oklch(19% 0.006 85);
-    --ink: oklch(92% 0.006 85);
-    --muted: oklch(66% 0.008 85);
-    --faint: oklch(46% 0.007 85);
-    --rule: oklch(29% 0.006 85);
-    --field: oklch(23% 0.006 85);
-    --link: oklch(76% 0.085 250);
+    --paper: oklch(99% 0.004 85);
+    --ink: oklch(18% 0.008 85);
+    --muted: oklch(40% 0.007 85);
+    --faint: oklch(58% 0.006 85);
+    --rule: oklch(88% 0.005 85);
+    --field: oklch(97% 0.005 85);
+    --link: oklch(18% 0.008 85);
+
+    color-scheme: light;
   }
 }
 
@@ -60,20 +74,24 @@ h1 {
 
 /* --- controls: one line of settings, not a form to fill out --- */
 
+/* Inputs are underlines rather than boxes: the row reads as a line of
+   settings instead of a form waiting to be filled out. */
 form {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem 1.25rem;
-  padding-bottom: 1.25rem;
+  align-items: baseline;
+  gap: 0.4rem 1.1rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid var(--rule);
+  font-size: 0.8125rem;
+  color: var(--muted);
 }
 
 label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
   color: var(--muted);
 }
 
@@ -81,30 +99,58 @@ input[type='text'],
 input[type='date'],
 input[type='number'] {
   font: inherit;
-  font-size: 0.9375rem;
+  font-size: 0.8125rem;
   color: var(--ink);
-  background: var(--field);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  padding: 0.35rem 0.5rem;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 0.1rem 0.1rem 0.15rem;
+}
+
+input:focus {
+  outline: none;
+  border-bottom-color: var(--ink);
 }
 
 input[type='text'] {
   width: 6rem;
 }
+
+/* The spinner is the ugliest control the platform ships; the stepper below
+   replaces it in both engines. */
 input[type='number'] {
-  width: 5rem;
+  width: 2.2rem;
+  text-align: center;
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
+
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 0.4;
+  cursor: pointer;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.8;
+}
+
 /* An address needs the room a ZIP does not. */
 .anchor input[type='text'] {
-  width: 16rem;
+  width: 14rem;
   max-width: 100%;
 }
 
 input:focus-visible,
 button:focus-visible {
-  outline: 2px solid var(--link);
-  outline-offset: 1px;
+  outline: 1px solid var(--ink);
+  outline-offset: 2px;
 }
 
 button {
@@ -123,18 +169,29 @@ button:disabled {
   opacity: 0.45;
 }
 
-.toggles {
-  display: flex;
-  gap: 1rem;
-  flex-basis: 100%;
-  font-size: 0.75rem;
-  color: var(--muted);
+/* --- miles stepper: our own −/+ in the markers' weight --- */
+
+.stepper {
+  display: inline-flex;
+  align-items: baseline;
 }
 
-.toggles label {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.35rem;
+.stepper button {
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--faint);
+  background: none;
+  border: 0;
+  padding: 0 0.25rem;
+  cursor: pointer;
+}
+
+.stepper button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.stepper button:disabled {
+  opacity: 0.35;
 }
 
 /* --- status --- */
@@ -145,96 +202,6 @@ button:disabled {
   font-size: 0.75rem;
   line-height: 1.7;
   color: var(--faint);
-}
-
-/* One row per source. With several running at once a single shared counter
-   flickers between unrelated jobs; separate tracks each move forward on their
-   own and show plainly which sources are still working. */
-.track {
-  display: grid;
-  grid-template-columns: 13.5rem 3.5rem 6rem 1fr;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.15rem 0;
-}
-
-.track__label {
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.track__count {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.track__now {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.track--done .track__label,
-.track--done .track__count {
-  color: var(--faint);
-}
-
-.bar {
-  height: 2px;
-  background: var(--rule);
-  position: relative;
-}
-
-/* Work in flight, drawn behind the finished segment. */
-.bar::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--pending, 0%);
-  background: var(--rule);
-  filter: brightness(0.94);
-  transition: width 350ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@media (prefers-color-scheme: dark) {
-  .bar::before {
-    filter: brightness(1.5);
-  }
-}
-
-.bar::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--fill, 0%);
-  background: var(--muted);
-  transition: width 350ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.track--done .bar::after {
-  background: var(--faint);
-}
-
-@media (max-width: 640px) {
-  .track {
-    grid-template-columns: 1fr 3.5rem;
-  }
-  .track .bar,
-  .track__now {
-    display: none;
-  }
-}
-
-/* Per-source freshness: the arthouse calendar can be six days older than the
-   multiplex grid, and one timestamp for the lot would hide that. */
-.freshness {
-  margin-top: 1.5rem;
-}
-
-.freshness .track {
-  grid-template-columns: 13.5rem 5rem 1fr;
 }
 
 .error {
@@ -328,14 +295,18 @@ th:last-child {
   width: 40%;
 }
 
+/* The link colour is the ink colour now, so the underline is what marks a
+   title as clickable. It is drawn in the rule colour to stay quiet under a
+   long list and darkens on hover. */
 .title a {
-  color: var(--ink);
-  text-decoration: none;
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--faint);
 }
 
 .title a:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-color: var(--ink);
 }
 
 /* Ticket links for a row that merged several chains' listings of one event. */
@@ -350,6 +321,7 @@ th:last-child {
 
 .title__links a {
   color: var(--muted);
+  text-decoration-color: var(--rule);
 }
 
 .notes {
@@ -438,104 +410,205 @@ pre {
   max-width: 62ch;
 }
 
-/* Settings grouped by what they affect, so the row stays scannable. */
-.options {
-  flex-basis: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding-top: 0.25rem;
+/* --- option menus ---
+   Each group is a small overlay anchored to its button. Absolutely
+   positioned on purpose: opening one must not move the table underneath. */
+
+.menu {
+  position: relative;
+  display: inline-block;
 }
 
-.optgroup {
-  display: grid;
-  grid-template-columns: 4.5rem 1fr;
-  align-items: baseline;
-  gap: 0.75rem;
-}
-
-.optgroup__title {
-  font-size: 0.6875rem;
-  color: var(--faint);
-  letter-spacing: 0.04em;
-}
-
-.optgroup__items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1rem;
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-.optgroup__items label {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-@media (max-width: 640px) {
-  .optgroup {
-    grid-template-columns: 1fr;
-    gap: 0.25rem;
-  }
-}
-
-/* Options stay folded away: the common run needs none of them. The width is
-   fixed to the longer "hide options" label so the row does not shift when the
-   text changes, and the whole box stays clickable either way. */
-.disclosure {
+.menu__btn {
   font: inherit;
   font-size: 0.8125rem;
-  width: 7.5rem;
   color: var(--muted);
-  background: var(--field);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  padding: 0.35rem 0.5rem;
-  text-align: center;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  padding: 0.1rem 0 0.15rem;
   cursor: pointer;
 }
 
-.disclosure:hover {
+.menu__btn:hover,
+.menu__btn[aria-expanded='true'] {
   color: var(--ink);
-  border-color: var(--muted);
+  border-bottom-color: var(--rule);
 }
 
-.inline-number {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.4rem;
+.menu__btn .n {
+  color: var(--faint);
 }
 
-.inline-number input {
-  width: 3.25rem;
+.menu__list {
+  position: absolute;
+  z-index: 5;
+  top: 1.7rem;
+  left: 0;
+  min-width: 13rem;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.15rem 0;
 }
 
-.inline-number select {
+/* Right-anchored when the button sits near the right edge. */
+.menu__list--right {
+  left: auto;
+  right: 0;
+}
+
+.menu__bulk {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0.7rem 0.4rem;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.6875rem;
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+.menu__bulk button {
+  font: inherit;
+  color: var(--faint);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.menu__bulk button:hover {
+  color: var(--ink);
+}
+
+.menu__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.3rem 0.7rem;
+}
+
+.menu__row + .menu__row {
+  border-top: 1px solid var(--rule);
+}
+
+.menu__hint {
+  font-size: 0.6875rem;
+  color: var(--faint);
+}
+
+/* A setting is a word, not a checkbox: on reads as plain text, off is struck
+   through. Half the height of a checkbox grid and says the same thing. */
+.word {
   font: inherit;
   font-size: 0.8125rem;
   color: var(--ink);
-  background: var(--field);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  padding: 0.25rem 0.35rem;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
 }
 
-/* Section headings sit inside the table so the columns stay aligned. */
-.section-row th {
-  padding-top: 1.75rem;
-  font-size: 0.75rem;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--muted);
+.word[aria-pressed='false'] {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.word:hover {
+  color: var(--link);
+}
+
+/* --- collapsed tables ---
+   Everything but this week folds to a header line carrying its own count. */
+
+.sect {
   border-bottom: 1px solid var(--rule);
+}
+
+.sect__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  width: 100%;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-family: var(--mono);
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0.55rem 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sect__head:hover {
+  color: var(--ink);
+}
+
+.sect__marker,
+.sect__count {
+  color: var(--faint);
+}
+
+.sect__body {
+  padding-bottom: 0.75rem;
+}
+
+/* The nested table has its own rules; the section's own bottom border is the
+   one that separates it from the next header. */
+.sect__body tr:last-child td {
+  border-bottom: 0;
+}
+
+/* --- footer --- */
+
+footer {
+  margin-top: 4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+footer a {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--faint);
+}
+
+footer a:hover {
+  text-decoration-color: var(--ink);
+}
+
+footer button {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--link);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--faint);
+  cursor: pointer;
+}
+
+footer button:hover {
+  text-decoration-color: var(--ink);
 }
 
 /* --- email signup --- */
 
-/* Sits below the table at the same volume as the freshness block: present for
-   whoever wants it, silent for whoever is here to read listings. */
+/* Opened from the footer link, so a reader who never subscribes never sees a
+   form at all. */
 .subscribe {
   margin-top: 3rem;
 }
