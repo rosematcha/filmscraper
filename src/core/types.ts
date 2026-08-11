@@ -219,6 +219,8 @@ export interface ScrapeResult {
   readonly theaters: readonly Theater[];
   readonly movies: readonly AggregatedMovie[];
   readonly warnings: readonly ScrapeWarning[];
+  /** Sources that returned a page error and must not replace last-known-good data. */
+  readonly failedSourceIds?: readonly string[];
   /** The raw venue-days behind `movies`, for publishing a reusable dataset. */
   readonly days: readonly VenueDay[];
 }

@@ -85,6 +85,7 @@ export function mergeDataset(
     readonly days: readonly VenueDay[];
     readonly warnings: readonly ScrapeWarning[];
     readonly sourceIds: readonly string[];
+    readonly failedSourceIds?: readonly string[];
     readonly from: IsoDate;
     readonly to: IsoDate;
     readonly zip: string;
@@ -94,7 +95,8 @@ export function mergeDataset(
   },
   now: Date,
 ): Dataset {
-  const scraped = new Set(fresh.sourceIds);
+  const failed = new Set(fresh.failedSourceIds ?? []);
+  const scraped = new Set(fresh.sourceIds.filter((id) => !failed.has(id)));
   const sourceOf = (day: VenueDay): string => day.sourceId ?? 'fandango';
 
   // A previous run at a different ZIP or a narrower radius cannot be trusted
@@ -110,6 +112,11 @@ export function mergeDataset(
         (d) => !scraped.has(sourceOf(d)) && d.date >= fresh.from && d.date <= fresh.to,
       )
     : [];
+  // A failed source is not authoritative emptiness. Keep its old rows when we
+  // have them; on a first run, retain whatever partial rows it did return.
+  const freshDays = compatible
+    ? fresh.days.filter((day) => !failed.has(sourceOf(day)))
+    : fresh.days;
 
   // The posting boundary is measured on Fandango and nothing else, so a run
   // without it reports the end of the window — no boundary found. Writing that
@@ -117,7 +124,7 @@ export function mergeDataset(
   // fully posted, and a wide release that has not put Friday on sale yet would
   // read as "through Thursday". Keep whichever pair claims less: the earlier
   // horizon, the later first-reliable date.
-  const measuresHorizon = fresh.sourceIds.includes('fandango');
+  const measuresHorizon = scraped.has('fandango');
   const clamp = (date: IsoDate): IsoDate =>
     date < fresh.from ? fresh.from : date > fresh.to ? fresh.to : date;
   const horizon =
@@ -131,12 +138,19 @@ export function mergeDataset(
 
   const stamps: Record<string, SourceStamp> = compatible ? { ...previous.sources } : {};
   const stamp: SourceStamp = { updatedAt: now.toISOString(), from: fresh.from, to: fresh.to };
-  for (const id of fresh.sourceIds) stamps[id] = stamp;
+  for (const id of scraped) stamps[id] = stamp;
 
-  // Warnings from carried-over sources no longer describe this run.
+  // Page errors describe one attempt and must clear after a later successful
+  // run. The radius warning describes the carried Fandango rows themselves,
+  // so it survives until Fandango runs authoritatively again.
   const carriedWarnings = compatible
-    ? previous.warnings.filter((w) => !fresh.warnings.some((f) => f.message === w.message))
+    ? previous.warnings.filter(
+        (warning) => warning.kind === 'radius-truncated' && !scraped.has('fandango'),
+      )
     : [];
+  const warnings = [...fresh.warnings, ...carriedWarnings].filter(
+    (warning, index, all) => all.findIndex((other) => other.message === warning.message) === index,
+  );
 
   return {
     version: DATASET_VERSION,
@@ -147,8 +161,8 @@ export function mergeDataset(
     radiusMiles: fresh.radiusMiles,
     horizon,
     knownFrom,
-    days: [...carried, ...fresh.days],
-    warnings: [...fresh.warnings, ...carriedWarnings.filter((w) => w.kind !== 'expired-today')],
+    days: [...carried, ...freshDays],
+    warnings,
     sources: stamps,
   };
 }

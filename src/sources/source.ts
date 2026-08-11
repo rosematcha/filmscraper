@@ -13,6 +13,8 @@ export interface SourceRequest {
 export interface SourceResult {
   readonly days: VenueDay[];
   readonly warnings: ScrapeWarning[];
+  /** False when the rows are partial and must not replace last-known-good data. */
+  readonly complete?: boolean;
 }
 
 /**

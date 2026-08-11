@@ -12,7 +12,7 @@ export class FandangoSource implements Source {
   ) {}
 
   async harvest(request: SourceRequest): Promise<SourceResult> {
-    return harvestFandango(this.session, {
+    const result = await harvestFandango(this.session, {
       zip: request.zip,
       dates: request.dates,
       radiusMiles: request.radiusMiles,
@@ -30,6 +30,10 @@ export class FandangoSource implements Source {
           }
         : {}),
     });
+    return {
+      ...result,
+      complete: !result.warnings.some((warning) => warning.kind === 'page-error'),
+    };
   }
 }
 

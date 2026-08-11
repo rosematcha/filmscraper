@@ -148,6 +148,30 @@ describe('mergeDataset', () => {
     expect(merged.sources['sapl']).toBeUndefined();
   });
 
+  it('keeps last-known-good rows and freshness when a source fails', () => {
+    const priorStamp = {
+      updatedAt: '2026-08-02T18:00:00.000Z',
+      from: '2026-08-02',
+      to: '2026-09-01',
+    };
+    const previous = base({
+      days: [day(undefined, '2026-08-04'), day('sapl', '2026-08-05')],
+      sources: { fandango: priorStamp },
+    });
+    const failed = {
+      ...fresh,
+      failedSourceIds: ['fandango'],
+      days: [day(undefined, '2026-08-03')],
+    };
+
+    const merged = mergeDataset(previous, failed, now);
+    expect(merged.days.filter((d) => d.sourceId === undefined).map((d) => d.date)).toEqual([
+      '2026-08-04',
+    ]);
+    expect(merged.sources['fandango']).toEqual(priorStamp);
+    expect(merged.horizon).toBe('2026-08-08');
+  });
+
   it('preserves earlier stamps across runs', () => {
     const withStamp = base({
       sources: {
@@ -157,6 +181,13 @@ describe('mergeDataset', () => {
     const merged = mergeDataset(withStamp, fresh, now);
     expect(merged.sources['sapl']?.updatedAt).toBe('2026-08-01T18:00:00.000Z');
     expect(merged.sources['fandango']?.updatedAt).toBe(now.toISOString());
+  });
+
+  it('clears page errors after a successful later run', () => {
+    const previous = base({
+      warnings: [{ kind: 'page-error', message: 'McNay could not be read.' }],
+    });
+    expect(mergeDataset(previous, fresh, now).warnings).toEqual([]);
   });
 
   it('starts clean when the previous run used a different radius', () => {

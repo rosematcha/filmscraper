@@ -134,8 +134,25 @@ async function harvestSeedDate(
       if (!hasMore) break;
 
       await more.scrollIntoViewIfNeeded().catch(() => undefined);
-      await more.click({ timeout: 8000 }).catch(() => undefined);
+      const advanced = await more
+        .click({ timeout: 8000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!advanced) {
+        warnings.push({
+          kind: 'page-error',
+          message: `Fandango pagination failed for ${date} after page ${String(pageNo)}; farther theaters may be missing.`,
+        });
+        break;
+      }
       await page.waitForTimeout(2500);
+      if ((await page.content()) === html) {
+        warnings.push({
+          kind: 'page-error',
+          message: `Fandango pagination did not advance for ${date} after page ${String(pageNo)}; farther theaters may be missing.`,
+        });
+        break;
+      }
     }
   } finally {
     await page.close();

@@ -133,10 +133,7 @@ export function detectKnownFrom(
 }
 
 /** Dates already gone by the time the scrape ran. */
-export function pastDatesWarning(
-  dates: readonly IsoDate[],
-  today: IsoDate,
-): ScrapeWarning | null {
+export function pastDatesWarning(dates: readonly IsoDate[], today: IsoDate): ScrapeWarning | null {
   const past = dates.filter((d) => d < today);
   if (past.length === 0) return null;
   return {
@@ -221,7 +218,7 @@ export async function runPipeline(
   const results = await Promise.all(
     sources.map((source) => {
       const tagged = taggedProgress(source.id, options.onProgress);
-      const finish = <T,>(value: T): T => {
+      const finish = <T>(value: T): T => {
         options.onProgress?.({
           sourceId: source.id,
           message: 'done',
@@ -238,9 +235,9 @@ export async function runPipeline(
           radiusMiles: options.searchRadiusMiles ?? request.radiusMiles,
           ...(tagged ? { onProgress: tagged } : {}),
         })
-        .then(finish)
-        .catch((error: unknown) =>
-          finish({
+        .then((result) => ({ ...finish(result), sourceId: source.id }))
+        .catch((error: unknown) => ({
+          ...finish({
             days: [],
             warnings: [
               {
@@ -249,7 +246,9 @@ export async function runPipeline(
               },
             ],
           }),
-        );
+          sourceId: source.id,
+          complete: false,
+        }));
     }),
   );
   for (const result of results) {
@@ -283,6 +282,24 @@ export async function runPipeline(
     aliases: options.aliases,
     keepYears: options.keepYears,
   });
+  const failedSourceIds = results
+    .filter(
+      (result) =>
+        result.complete === false ||
+        (result.days.length === 0 &&
+          result.warnings.some((warning) => warning.kind === 'page-error')),
+    )
+    .map((result) => result.sourceId);
 
-  return { request, dates, horizon, knownFrom, theaters, movies, warnings, days: inRange };
+  return {
+    request,
+    dates,
+    horizon,
+    knownFrom,
+    theaters,
+    movies,
+    warnings,
+    days: inRange,
+    failedSourceIds,
+  };
 }

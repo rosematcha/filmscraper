@@ -22,7 +22,16 @@ import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sourc
 
 function positiveNumber(value: string): number {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new InvalidArgumentError('expected a positive number');
+  if (!Number.isFinite(parsed) || parsed <= 0)
+    throw new InvalidArgumentError('expected a positive number');
+  return parsed;
+}
+
+function positiveInteger(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError('expected a positive integer');
+  }
   return parsed;
 }
 
@@ -42,26 +51,27 @@ const program = new Command()
   .name('filmscraper-publish')
   .description('Scrape a window and write the dataset the static site reads')
   .option('-z, --zip <zip>', 'ZIP code to search from', '78205')
-  .option('-d, --days <n>', 'days to cover, starting today', positiveNumber, 31)
+  .option('-d, --days <n>', 'days to cover, starting today', positiveInteger, 31)
   .option(
     '-r, --radius <miles>',
     'radius to scrape; the site can filter below this but never above',
     positiveNumber,
     35,
   )
-  .option('-c, --concurrency <n>', 'Fandango pages to fetch at once', positiveNumber, 4)
+  .option('-c, --concurrency <n>', 'Fandango pages to fetch at once', positiveInteger, 4)
   .option('--timezone <zone>', 'timezone the market sits in', 'America/Chicago')
   .option('-o, --out <file>', 'where to write the dataset', 'web/public/data/latest.json')
   .option(
     '-s, --sources <ids>',
     'comma-separated sources; defaults to whichever are due now',
-    (value: string) => value.split(',').map((v) => v.trim()).filter(Boolean),
+    (value: string) =>
+      value
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean),
   )
   .option('--all', 'scrape every source regardless of schedule', false)
-  .option(
-    '--merge-from <url>',
-    'previous dataset to carry un-scraped sources over from',
-  );
+  .option('--merge-from <url>', 'previous dataset to carry un-scraped sources over from');
 
 program.parse();
 const options = program.opts<PublishOptions>();
@@ -109,6 +119,14 @@ async function loadPrevious(source: string | undefined): Promise<Dataset | null>
 }
 
 const previous = await loadPrevious(options.mergeFrom);
+
+const unknownSources = (options.sources ?? []).filter(
+  (id) => !SOURCES.some((source) => source.id === id),
+);
+if (unknownSources.length > 0) {
+  console.error(`unknown source(s): ${unknownSources.join(', ')}`);
+  process.exit(1);
+}
 
 const requested = options.all
   ? allSources()
@@ -163,6 +181,7 @@ try {
       days: result.days,
       warnings: result.warnings,
       sourceIds,
+      ...(result.failedSourceIds ? { failedSourceIds: result.failedSourceIds } : {}),
       from,
       to,
       zip: options.zip,
