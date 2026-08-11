@@ -4,13 +4,7 @@ import { unanchoredVenues } from '@core/core/filters.js';
 import type { Coords } from '@core/core/geo.js';
 import { fetchWithPolicy } from '@core/net/fetch.js';
 import { renderMarkdown, renderRows, type SortedMovie } from '@core/core/markdown.js';
-import {
-  expiredTodayWarning,
-  horizonWarning,
-  laggingTheaters,
-  pastDatesWarning,
-  theaterLagWarning,
-} from '@core/core/pipeline.js';
+import { horizonWarning, laggingTheaters, theaterLagWarning } from '@core/core/pipeline.js';
 import { dateRange, shortenTheater } from '@core/core/notes.js';
 import { unfilteredSources, type SectionOptions } from '@core/core/sections.js';
 import type { RenderOptions, ScrapeResult, ScrapeWarning, Theater } from '@core/core/types.js';
@@ -97,22 +91,21 @@ export function renderDataset(
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
-  const warnings = dataset.warnings.filter(
-    (warning) => warning.kind === 'page-error' || warning.kind === 'radius-truncated',
-  );
   // The scrape's own boundaries still apply: a date the multiplexes had not
   // posted when the job ran is unknown, not empty.
   const horizon = dataset.horizon < from ? from : dataset.horizon > to ? to : dataset.horizon;
-  const dynamicWarnings = [
-    expiredTodayWarning(days, today),
-    pastDatesWarning(dates, today),
+  // Only the posting-boundary notes are shown. A reader deciding what to see
+  // this weekend can act on "Friday is not on sale yet"; a scraper page error
+  // or an expired-showtime count describes the machinery, not the listings,
+  // and every note that cannot change a plan makes the ones that can easier to
+  // skip. The scrape log still carries the rest.
+  const warnings = [
     horizonWarning(horizon, dates),
     theaterLagWarning(
       laggingTheaters(days, dates, today, horizon, aliases.sentinels),
       aliases.theaterNames,
     ),
   ].filter((warning): warning is ScrapeWarning => warning !== null);
-  warnings.push(...dynamicWarnings);
   const result: ScrapeResult = {
     request: { zip: dataset.zip, from, to, radiusMiles: filters.radiusMiles },
     dates,

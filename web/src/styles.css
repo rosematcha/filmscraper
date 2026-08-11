@@ -235,16 +235,11 @@ button:disabled {
   max-width: 62ch;
 }
 
-.warning summary {
-  cursor: pointer;
+.warning p {
+  margin: 0;
 }
 
-.warning ul {
-  margin: 0.75rem 0 0;
-  padding-left: 1.25rem;
-}
-
-.warning li + li {
+.warning p + p {
   margin-top: 0.5rem;
 }
 

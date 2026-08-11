@@ -20,9 +20,6 @@ const only = (...tables: string[]): SectionOptions => ({
   currentYear: 2026,
 });
 
-/** Every table but the named ones. */
-const without = (...dropped: string[]): SectionOptions =>
-  only(...DEFAULT_TABLE_IDS.filter((id) => !dropped.includes(id)));
 import type { AggregatedMovie, Amenity, VenueDay } from '../src/core/types.js';
 
 describe('foreignLanguageOf', () => {
@@ -105,7 +102,8 @@ describe('buildSections', () => {
     sections.find((s) => s.id === id);
 
   it('breaks the drive-in and library into their own tables', () => {
-    const sections = buildSections(movies, without('events', 'foreign'));
+    // Asked for by name: both venue tables are opt-in.
+    const sections = buildSections(movies, only('drive-in', 'library'));
     expect(find(sections, 'drive-in')?.movies.map((m) => m.title)).toEqual(['Drive-In Only']);
     expect(find(sections, 'library')?.movies.map((m) => m.title)).toEqual(['Library Only']);
     // Foreign stays inline by default.
@@ -138,13 +136,13 @@ describe('buildSections', () => {
       day(undefined, 'Spider-Man', [group([])]),
       { ...day('stars-and-stripes', 'Spider-Man', [group([])]), theater: { name: 'Drive-In', href: '', miles: 30 } },
     ]);
-    const sections = buildSections(shared, without('events', 'foreign'));
+    const sections = buildSections(shared, only('drive-in'));
     expect(find(sections, 'main')?.movies.map((m) => m.title)).toEqual(['Spider-Man']);
     expect(find(sections, 'drive-in')?.movies.map((m) => m.title)).toEqual(['Spider-Man']);
   });
 
   it('keeps a venue-exclusive film out of the main table', () => {
-    const sections = buildSections(movies, without('events', 'foreign'));
+    const sections = buildSections(movies, only('drive-in', 'library'));
     expect(find(sections, 'main')?.movies.map((m) => m.title)).not.toContain('Drive-In Only');
     expect(find(sections, 'main')?.movies.map((m) => m.title)).not.toContain('Library Only');
   });
@@ -152,8 +150,17 @@ describe('buildSections', () => {
 
 describe('unfilteredSources', () => {
   it('exempts exactly the venues given their own table', () => {
-    expect([...unfilteredSources(DEFAULT_SECTION_OPTIONS)].sort()).toEqual(['sapl', 'stars-and-stripes']);
-    expect([...unfilteredSources(without('library'))]).toEqual(['stars-and-stripes']);
+    expect([...unfilteredSources(only('drive-in', 'library'))].sort()).toEqual([
+      'sapl',
+      'stars-and-stripes',
+    ]);
+    expect([...unfilteredSources(only('drive-in'))]).toEqual(['stars-and-stripes']);
+  });
+
+  it('exempts nothing by default, since neither venue table is on', () => {
+    // The radius is the only thing keeping the drive-in out of a downtown
+    // search once its table is off, so the exemption has to go with it.
+    expect([...unfilteredSources(DEFAULT_SECTION_OPTIONS)]).toEqual([]);
   });
 });
 
@@ -314,20 +321,17 @@ describe('open-caption table', () => {
 });
 
 describe('default section options', () => {
-  it('splits events and non-English releases out of the box', () => {
+  it('splits free, non-English and special screenings out of the box', () => {
+    // Three tables answer "what is worth knowing that the main table buries".
     // The timing tables are deliberately absent: judging whether a run has
     // ended needs history the posting backlog is still collecting, so they
-    // stay opt-in rather than splitting the table on a single scrape.
-    expect([...DEFAULT_SECTION_OPTIONS.tables].sort()).toEqual([
-      'drive-in',
-      'events',
-      'foreign',
-      'free',
-      'library',
-    ]);
-    // Open captions duplicate rows for a minority audience, so that one is the
-    // single table left opt-in.
-    expect(DEFAULT_SECTION_OPTIONS.tables).not.toContain('open-captions');
+    // stay opt-in rather than splitting the table on a single scrape. The two
+    // venue tables are a standing interest rather than a default one, and open
+    // captions duplicate rows for a minority audience.
+    expect([...DEFAULT_SECTION_OPTIONS.tables].sort()).toEqual(['events', 'foreign', 'free']);
+    for (const optIn of ['drive-in', 'library', 'open-captions', 'opens', 'last-chance']) {
+      expect(DEFAULT_SECTION_OPTIONS.tables).not.toContain(optIn);
+    }
     expect(DEFAULT_SECTION_OPTIONS.excludeForeign).toBe(false);
   });
 
@@ -478,10 +482,10 @@ describe('claimed rows', () => {
     // Library screenings are nearly all undated catalogue titles, so every one
     // of them is a "special event" too. Letting that table claim them first
     // left the library table permanently empty.
-    const sections = buildSections(
-      agg([day('sapl', 'Old Library Film', [group([])])]),
-      { ...DEFAULT_SECTION_OPTIONS, currentYear: 2026 },
-    );
+    const sections = buildSections(agg([day('sapl', 'Old Library Film', [group([])])]), {
+      ...only('library', 'events'),
+      currentYear: 2026,
+    });
     expect(sections.find((s) => s.id === 'library')?.movies.map((m) => m.title)).toEqual([
       'Old Library Film',
     ]);

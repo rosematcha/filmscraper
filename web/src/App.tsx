@@ -535,18 +535,15 @@ export default function App(): React.JSX.Element {
             </span>
           </div>
 
+          {/* Open on the page rather than behind a disclosure: what is not on
+              sale yet changes what a reader does with the table, and a note
+              worth acting on should not need a click to find. */}
           {view.warnings.length > 0 && (
-            <details className="warning">
-              <summary>
-                Listings are partial · {view.warnings.length}{' '}
-                {view.warnings.length === 1 ? 'note' : 'notes'}
-              </summary>
-              <ul>
-                {view.warnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            </details>
+            <aside className="warning">
+              {view.warnings.map((warning) => (
+                <p key={warning}>{warning}</p>
+              ))}
+            </aside>
           )}
 
           {showMarkdown ? (
