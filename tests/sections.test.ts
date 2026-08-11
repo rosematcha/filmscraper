@@ -372,11 +372,34 @@ describe('highlight tables', () => {
     expect(titles(sections, 'last-chance')).toEqual(['Closing']);
   });
 
-  it('leaves the highlighted film in the main table', () => {
-    // The highlights are a second look at rows that are already there; pulling
-    // them out would make the main table stop being the whole list.
+  it('takes the film out of the main table', () => {
+    // A timing table owns its rows: listing the same film twice made the page
+    // read as though there were two bookings.
     const sections = buildSections([film('Closing', week.slice(0, 3))], only('last-chance'), window);
-    expect(titles(sections, 'main')).toEqual(['Closing']);
+    expect(titles(sections, 'main')).toEqual([]);
+  });
+
+  it('leaves a non-English film under its own table rather than last chance', () => {
+    // What a film is outranks what its week is doing, so the table a reader
+    // scans for stays populated.
+    const closing = film('Ending', week.slice(0, 3), { foreign: true });
+    const sections = buildSections([closing], only('last-chance', 'foreign'), window);
+    expect(titles(sections, 'foreign')).toEqual(['Ending']);
+    expect(titles(sections, 'last-chance')).toEqual([]);
+    expect(titles(sections, 'main')).toEqual([]);
+  });
+
+  it('still keeps a partial-run table alongside the main row', () => {
+    // A free park screening describes a subset of the run, so the main row
+    // that describes the rest of it has to survive.
+    const mixed = film('Paddington', week, {
+      theaters: ['Palladium', 'Travis Park'],
+      freeVenues: ['Travis Park'],
+      freeDates: [week[1] ?? ''],
+    });
+    const sections = buildSections([mixed], only('free'), window);
+    expect(titles(sections, 'free')).toEqual(['Paddington']);
+    expect(titles(sections, 'main')).toEqual(['Paddington']);
   });
 
   it('lists a film that starts partway through under opens', () => {

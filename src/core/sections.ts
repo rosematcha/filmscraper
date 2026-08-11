@@ -11,11 +11,25 @@ export const OPEN_CAPTION_LABEL = 'Open caption';
  * How a table takes its rows.
  *
  * - `claims`     — the film leaves the main table for this one.
- * - `duplicates` — a highlight; the film stays in the main table as well.
+ * - `duplicates` — the table shows a *subset* of the run, so the film stays in
+ *                  the main table where the rest of it is described. A free
+ *                  park screening does not make the multiplex booking free.
  * - `venue`      — everything one venue is showing, and the film leaves the
  *                  main table only when that venue is the sole place it plays.
  */
 export type SectionMode = 'claims' | 'duplicates' | 'venue';
+
+/**
+ * Which table wins a film that qualifies for several.
+ *
+ * What a film *is* outranks what its week is doing: a Telugu release in its
+ * final days belongs under "Not in English", because that is the thing a
+ * reader is scanning for. Timing tables then collect whatever is left.
+ *
+ * Kept apart from registry order so the urgent tables can still render first
+ * while claiming last.
+ */
+export type ClaimRank = 0 | 1;
 
 export interface SectionContext extends RunWindow {
   /** Year the run is measured against; injected so tests stay stable. */
@@ -38,6 +52,8 @@ export interface SectionDef {
   /** One line saying what lands in it, shown beside the checkbox. */
   readonly hint: string;
   readonly mode: SectionMode;
+  /** Lower claims first; defaults to the identity tier. */
+  readonly claimRank?: ClaimRank;
   readonly defaultOn: boolean;
   /**
    * Source whose venues this table is about.
@@ -137,7 +153,8 @@ export const SECTIONS: readonly SectionDef[] = [
     heading: 'Last chance',
     label: 'Last chance',
     hint: 'Runs that end before the posted schedule does',
-    mode: 'duplicates',
+    mode: 'claims',
+    claimRank: 1,
     defaultOn: true,
     match: (movie, ctx) => classifyRun(movie.dates, ctx).shape === 'closing',
   },
@@ -146,7 +163,8 @@ export const SECTIONS: readonly SectionDef[] = [
     heading: 'Opens this week',
     label: 'Opens this week',
     hint: 'Films that start partway through the window',
-    mode: 'duplicates',
+    mode: 'claims',
+    claimRank: 1,
     defaultOn: true,
     match: (movie, ctx) => {
       const { shape } = classifyRun(movie.dates, ctx);
@@ -268,7 +286,9 @@ export function unfilteredSources(options: SectionOptions): Set<string> {
  *
  * A film showing at both a multiplex and the drive-in stays in the main table;
  * only entries that exist *solely* at a broken-out venue move. A `claims` table
- * takes the row outright, and the first one in registry order wins it.
+ * takes the row outright, and the lowest `claimRank` wins it — registry order
+ * decides only among equals, so the urgent tables can render first while
+ * claiming last.
  */
 export function buildSections(
   movies: readonly AggregatedMovie[],
@@ -280,7 +300,12 @@ export function buildSections(
   const collected = new Map<string, AggregatedMovie[]>(active.map((s) => [s.id, []]));
   const byMode = {
     venue: active.filter((s) => s.mode === 'venue'),
-    claims: active.filter((s) => s.mode === 'claims'),
+    // Sorted by rank rather than taken in registry order: "Last chance" reads
+    // first but claims last, so a non-English film ending its run stays under
+    // "Not in English" instead of being pulled out of it.
+    claims: active
+      .filter((s) => s.mode === 'claims')
+      .sort((a, b) => (a.claimRank ?? 0) - (b.claimRank ?? 0)),
     duplicates: active.filter((s) => s.mode === 'duplicates'),
   };
   const main: AggregatedMovie[] = [];

@@ -13,6 +13,9 @@ export { SECTIONS };
  */
 const KEY = 'filmscraper.tables.v1';
 
+/** The one table another setting can contradict. */
+const FOREIGN_ID = 'foreign';
+
 interface StoredTables {
   /** Tables explicitly turned on. */
   readonly on: readonly string[];
@@ -87,7 +90,10 @@ export function useTablePrefs(): TablePrefs {
       const next: StoredTables = {
         on: enabled ? [...new Set([...base.on, id])] : base.on.filter((x) => x !== id),
         off: enabled ? base.off.filter((x) => x !== id) : [...new Set([...base.off, id])],
-        excludeForeign: base.excludeForeign,
+        // Asking for the table means wanting to see those films, which is the
+        // opposite of dropping them. Left to contradict each other, the pair
+        // produces a "Not in English" table that can never have a row in it.
+        excludeForeign: enabled && id === FOREIGN_ID ? false : base.excludeForeign,
       };
       write(next);
       return next;
@@ -97,7 +103,13 @@ export function useTablePrefs(): TablePrefs {
   const setExcludeForeign = useCallback((value: boolean) => {
     setStored((prev) => {
       const base = prev ?? { on: [], off: [], excludeForeign: false };
-      const next = { ...base, excludeForeign: value };
+      // Dropping the films takes their table with it, visibly: the word goes
+      // struck through in the same menu rather than the table just vanishing.
+      const next: StoredTables = {
+        on: value ? base.on.filter((x) => x !== FOREIGN_ID) : base.on,
+        off: value ? [...new Set([...base.off, FOREIGN_ID])] : base.off,
+        excludeForeign: value,
+      };
       write(next);
       return next;
     });
