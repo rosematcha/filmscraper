@@ -1,6 +1,6 @@
 import { buildNotes } from './notes.js';
 import { buildSections, DEFAULT_SECTION_OPTIONS, type SectionOptions } from './sections.js';
-import type { RunWindow } from './run.js';
+import { detectFrontier, type RunWindow } from './run.js';
 import type { AggregatedMovie, IsoDate, RenderOptions, ScrapeResult } from './types.js';
 
 /**
@@ -8,10 +8,21 @@ import type { AggregatedMovie, IsoDate, RenderOptions, ScrapeResult } from './ty
  *
  * The tables that highlight a closing or opening run need the same posting
  * boundaries the Notes cell respects, or they would call a film "last chance"
- * on the strength of a Friday nobody has published yet.
+ * on the strength of a Friday nobody has published yet. The frontier is
+ * derived here because judging one film's absence takes every film's presence.
  */
 function runWindow(result: ScrapeResult): RunWindow {
-  return { windowDates: result.dates, knownFrom: result.knownFrom, horizon: result.horizon };
+  return {
+    windowDates: result.dates,
+    knownFrom: result.knownFrom,
+    horizon: result.horizon,
+    frontier: detectFrontier(
+      result.movies.map((m) => m.dates),
+      result.dates,
+      result.knownFrom,
+      result.horizon,
+    ),
+  };
 }
 
 const SITE = 'https://www.fandango.com';
@@ -105,10 +116,11 @@ function toRow(
   result: ScrapeResult,
   options: RenderOptions,
   theaterNames: Readonly<Record<string, string>>,
+  frontier: IsoDate,
 ): SortedMovie {
   return {
     movie,
-    notes: buildNotes(movie, result.dates, result.knownFrom, result.horizon, options, theaterNames),
+    notes: buildNotes(movie, result.dates, result.knownFrom, result.horizon, options, theaterNames, frontier),
     url: movieUrl(movie, result.dates, result.knownFrom, result.horizon),
     links: movie.ticketLinks.map((link) => ({
       label: link.label,
@@ -129,9 +141,10 @@ export function renderRows(
   theaterNames: Readonly<Record<string, string>>,
   sectionOptions: SectionOptions = DEFAULT_SECTION_OPTIONS,
 ): SortedMovie[] {
-  return buildSections(result.movies, sectionOptions, runWindow(result)).flatMap((section) =>
+  const window = runWindow(result);
+  return buildSections(result.movies, sectionOptions, window).flatMap((section) =>
     sortMovies(section.movies).map((movie) => ({
-      ...toRow(movie, result, options, theaterNames),
+      ...toRow(movie, result, options, theaterNames, window.frontier ?? result.horizon),
       section: section.id,
       sectionHeading: section.heading,
     })),
@@ -147,11 +160,12 @@ export function renderMarkdown(
   sectionOptions: SectionOptions = DEFAULT_SECTION_OPTIONS,
 ): string {
   const blocks: string[] = [];
-  for (const section of buildSections(result.movies, sectionOptions, runWindow(result))) {
+  const window = runWindow(result);
+  for (const section of buildSections(result.movies, sectionOptions, window)) {
     if (section.movies.length === 0) continue;
     const lines = section.heading ? [`### ${section.heading}`, '', ...HEADER] : [...HEADER];
     for (const movie of sortMovies(section.movies)) {
-      const row = toRow(movie, result, options, theaterNames);
+      const row = toRow(movie, result, options, theaterNames, window.frontier ?? result.horizon);
       lines.push(`| ${cell(movie.title)} | ${linkCell(row)} | ${cell(row.notes)} |`);
     }
     blocks.push(lines.join('\n'));

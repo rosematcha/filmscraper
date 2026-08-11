@@ -66,8 +66,9 @@ export function describeDates(
   windowDates: readonly IsoDate[],
   knownFrom: IsoDate,
   horizon: IsoDate,
+  frontier: IsoDate = horizon,
 ): string | null {
-  const { shape, date } = classifyRun(playedDates, { windowDates, knownFrom, horizon });
+  const { shape, date } = classifyRun(playedDates, { windowDates, knownFrom, horizon, frontier });
   const on = date ?? '';
   switch (shape) {
     case 'none':
@@ -111,6 +112,7 @@ export function buildNotes(
   horizon: IsoDate,
   options: RenderOptions,
   theaterNames: Readonly<Record<string, string>>,
+  frontier: IsoDate = horizon,
 ): string {
   const short = (n: string): string => shortenTheater(n, theaterNames);
   const allTheaters = new Set(movie.theaters);
@@ -170,7 +172,7 @@ export function buildNotes(
   // --- scarcity: dates and venues -----------------------------------------
   const limitedVenues = movie.theaters.length <= NAMED_THEATER_LIMIT;
   const venueList = humanList(movie.theaters.map(short));
-  const dateClause = describeDates(movie.dates, windowDates, knownFrom, horizon);
+  const dateClause = describeDates(movie.dates, windowDates, knownFrom, horizon, frontier);
 
   if (dateClause && limitedVenues) clauses.push(`${dateClause} at ${venueList}`);
   else if (dateClause) clauses.push(dateClause);

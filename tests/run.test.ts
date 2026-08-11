@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyRun } from '../src/core/run.js';
+import { classifyRun, detectFrontier } from '../src/core/run.js';
 import { dateRange } from '../src/core/notes.js';
 
 const WEEK = dateRange('2026-08-03', '2026-08-09');
@@ -53,5 +53,91 @@ describe('classifyRun', () => {
   it('has nothing to say about an empty run or an empty window', () => {
     expect(classifyRun([], posted).shape).toBe('none');
     expect(classifyRun(WEEK, { windowDates: [], knownFrom: '', horizon: '' }).shape).toBe('none');
+  });
+
+  // The frontier cases: a month-long window where the horizon covers two days
+  // but the broad schedule is demonstrably posted through the 20th.
+  const MONTH = dateRange('2026-08-10', '2026-09-09');
+  const scraped = {
+    windowDates: MONTH,
+    knownFrom: '2026-08-11',
+    horizon: '2026-08-12',
+    frontier: '2026-08-20',
+  };
+
+  it('calls a run that ends while the rest of the schedule goes on a closing', () => {
+    // Obsession: a long run whose last date sits inside the horizon. Its
+    // absence afterwards is meaningful because the frontier reaches past it.
+    expect(classifyRun(dateRange('2026-08-10', '2026-08-12'), scraped)).toEqual({
+      shape: 'closing',
+      date: '2026-08-12',
+    });
+  });
+
+  it('sees a run end past the horizon but short of the frontier', () => {
+    // Moana: ends the 13th, one day beyond the horizon. Still a closing,
+    // because twenty other films play through the 20th.
+    expect(classifyRun(dateRange('2026-08-10', '2026-08-13'), scraped)).toEqual({
+      shape: 'closing',
+      date: '2026-08-13',
+    });
+  });
+
+  it('treats a pre-sale past the horizon as continuation, not closing', () => {
+    // Nimrods: a Tuesday preview inside the horizon, then an unbroken run on
+    // sale through the frontier. The preview must not read as a dying run —
+    // this is an opening, dated to the day the run proper starts.
+    const nimrods = ['2026-08-11', ...dateRange('2026-08-13', '2026-08-20')];
+    expect(classifyRun(nimrods, scraped)).toEqual({ shape: 'opens', date: '2026-08-13' });
+  });
+
+  it('keeps a film that runs to the frontier out of the closing bucket', () => {
+    expect(classifyRun(dateRange('2026-08-10', '2026-08-20'), scraped).shape).toBe('throughout');
+  });
+
+  it('still declines to call an ending without frontier evidence', () => {
+    // Same dates, no frontier: the film stops where the horizon stops, and
+    // nothing distinguishes that from an unposted schedule.
+    const { frontier, ...bare } = scraped;
+    void frontier;
+    expect(classifyRun(dateRange('2026-08-10', '2026-08-12'), bare).shape).toBe('throughout');
+  });
+
+  it('calls a two-day run closing when it fills the whole known range', () => {
+    // Obsession after aggregation: today's showtimes are gone, leaving only
+    // the two known days — which it plays in full before vanishing.
+    expect(classifyRun(['2026-08-11', '2026-08-12'], scraped)).toEqual({
+      shape: 'closing',
+      date: '2026-08-12',
+    });
+  });
+
+  it('leaves scattered dates enumerated even when they end early', () => {
+    // A twice-a-week repertory booking is not a closing run.
+    expect(classifyRun(['2026-08-11', '2026-08-13', '2026-08-15'], scraped).shape).toBe('listed');
+  });
+});
+
+describe('detectFrontier', () => {
+  const MONTH = dateRange('2026-08-10', '2026-09-09');
+
+  /** N titles playing every day of `span`. */
+  const cohort = (n: number, from: string, to: string): string[][] =>
+    Array.from({ length: n }, () => dateRange(from, to));
+
+  it('finds the posting cliff where most titles stop', () => {
+    // Twenty wide releases posted through the 20th, a handful of pre-sold
+    // events past it: the frontier is the 20th, not the events' September.
+    const titles = [...cohort(20, '2026-08-10', '2026-08-20'), ...cohort(3, '2026-08-10', '2026-09-05')];
+    expect(detectFrontier(titles, MONTH, '2026-08-11', '2026-08-12')).toBe('2026-08-20');
+  });
+
+  it('never reaches past a genuine falloff', () => {
+    const titles = [...cohort(10, '2026-08-10', '2026-08-13'), ...cohort(2, '2026-08-10', '2026-08-30')];
+    expect(detectFrontier(titles, MONTH, '2026-08-11', '2026-08-12')).toBe('2026-08-13');
+  });
+
+  it('falls back to the horizon with nothing to judge by', () => {
+    expect(detectFrontier([], MONTH, '2026-08-11', '2026-08-12')).toBe('2026-08-12');
   });
 });
