@@ -11,10 +11,12 @@ interface Window {
       element: HTMLElement,
       options: {
         sitekey: string;
+        action: string;
         callback: (token: string) => void;
         'expired-callback': () => void;
       },
     ) => string;
+    reset: (widgetId: string) => void;
   };
   /** Callback name handed to the Turnstile script tag. */
   onTurnstileLoad?: () => void;

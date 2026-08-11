@@ -51,7 +51,7 @@ export default async (request: Request): Promise<Response> => {
       200,
       actionPage({
         title: 'Unsubscribe',
-        text: 'This stops the weekly listings and deletes everything held about you: address, name and table choices. Nothing is kept.',
+        text: 'This stops the weekly listings and deletes your address, name and table choices. An anonymous deletion marker prevents stale requests from restoring them.',
         button: 'Unsubscribe and delete my data',
         token,
       }),
@@ -64,7 +64,7 @@ export default async (request: Request): Promise<Response> => {
 
   const removed = await unsubscribe(deps(), token);
   return removed
-    ? html(200, messagePage('Done', 'You are unsubscribed and your data is deleted.'))
+    ? html(200, messagePage('Done', 'You are unsubscribed and your identifying data is deleted.'))
     : html(
         410,
         messagePage(

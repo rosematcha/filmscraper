@@ -1,4 +1,5 @@
 import { blobsKv } from '../../src/store/blobs.js';
+import { fetchWithPolicy } from '../../src/net/fetch.js';
 import { resendMailer } from '../../src/subscribers/mailer.js';
 import { subscribe, type ServiceDeps } from '../../src/subscribers/service.js';
 import { SubscriberStore } from '../../src/subscribers/store.js';
@@ -17,24 +18,41 @@ function json(status: number, body: unknown): Response {
  * endpoint still stands — the per-address cooldown in the service is the
  * backstop — but the secret should be set anywhere real.
  */
-async function passesTurnstile(token: unknown, remoteIp: string | null): Promise<boolean> {
-  const secret = process.env['TURNSTILE_SECRET_KEY'];
-  if (secret === undefined || secret === '') return true;
-  if (typeof token !== 'string' || token === '') return false;
+async function passesTurnstile(
+  secret: string,
+  expectedHostname: string,
+  token: unknown,
+  remoteIp: string | null,
+): Promise<'passed' | 'rejected' | 'unavailable'> {
+  if (typeof token !== 'string' || token === '' || token.length > 2048) return 'rejected';
   const body = new URLSearchParams({ secret, response: token });
   if (remoteIp !== null) body.set('remoteip', remoteIp);
-  const response = await fetch(TURNSTILE_VERIFY, { method: 'POST', body });
-  if (!response.ok) return false;
-  const result: unknown = await response.json();
-  return (
-    typeof result === 'object' &&
-    result !== null &&
-    (result as Record<string, unknown>)['success'] === true
-  );
+  try {
+    const response = await fetchWithPolicy(
+      TURNSTILE_VERIFY,
+      { method: 'POST', body },
+      { timeoutMs: 5_000 },
+    );
+    if (!response.ok) return 'unavailable';
+    const result: unknown = await response.json();
+    if (typeof result !== 'object' || result === null) return 'unavailable';
+    const record = result as Record<string, unknown>;
+    return record['success'] === true &&
+      record['action'] === 'subscribe' &&
+      record['hostname'] === expectedHostname
+      ? 'passed'
+      : 'rejected';
+  } catch {
+    return 'unavailable';
+  }
 }
 
 export default async (request: Request): Promise<Response> => {
   if (request.method !== 'POST') return json(405, { ok: false, error: 'POST only' });
+  const contentLength = Number(request.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > 10_000) {
+    return json(413, { ok: false, error: 'Request is too large.' });
+  }
 
   let body: unknown;
   try {
@@ -47,10 +65,31 @@ export default async (request: Request): Promise<Response> => {
   }
   const fields = body as Record<string, unknown>;
 
+  const turnstileSecret = process.env['TURNSTILE_SECRET_KEY'];
+  const expectedHostname = process.env['TURNSTILE_EXPECTED_HOSTNAME'];
+  if (
+    turnstileSecret === undefined ||
+    turnstileSecret === '' ||
+    expectedHostname === undefined ||
+    expectedHostname === ''
+  ) {
+    console.error('subscribe: Turnstile configuration is incomplete');
+    return json(503, { ok: false, error: 'Signup is not available right now.' });
+  }
+
   // The client IP goes to Turnstile for verification and is not stored or
   // logged; the subscriber record never holds it.
   const remoteIp = request.headers.get('x-nf-client-connection-ip');
-  if (!(await passesTurnstile(fields['turnstileToken'], remoteIp))) {
+  const verification = await passesTurnstile(
+    turnstileSecret,
+    expectedHostname,
+    fields['turnstileToken'],
+    remoteIp,
+  );
+  if (verification === 'unavailable') {
+    return json(503, { ok: false, error: 'Verification is unavailable. Try again later.' });
+  }
+  if (verification === 'rejected') {
     return json(400, { ok: false, error: 'Verification failed. Reload and try again.' });
   }
 
@@ -90,4 +129,7 @@ export default async (request: Request): Promise<Response> => {
   }
 };
 
-export const config = { path: '/api/subscribe' };
+export const config = {
+  path: '/api/subscribe',
+  rateLimit: { windowLimit: 10, windowSize: 60, aggregateBy: ['ip'] },
+};

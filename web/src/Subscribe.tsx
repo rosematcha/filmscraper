@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SECTIONS } from './tables';
+import { fetchWithPolicy } from '@core/net/fetch.js';
 
 const TURNSTILE_KEY: string | undefined = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 const TURNSTILE_SRC =
@@ -23,6 +24,7 @@ export default function Subscribe({ defaultTables }: Props): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [captcha, setCaptcha] = useState<string | null>(null);
   const widget = useRef<HTMLDivElement | null>(null);
+  const widgetId = useRef<string | null>(null);
   const renderedWidget = useRef(false);
 
   // The Turnstile script loads only if a site key is configured, and only
@@ -33,8 +35,9 @@ export default function Subscribe({ defaultTables }: Props): React.JSX.Element {
     const render = (): void => {
       if (!widget.current || !window.turnstile || renderedWidget.current) return;
       renderedWidget.current = true;
-      window.turnstile.render(widget.current, {
+      widgetId.current = window.turnstile.render(widget.current, {
         sitekey: key,
+        action: 'subscribe',
         callback: (token) => {
           setCaptcha(token);
         },
@@ -56,13 +59,18 @@ export default function Subscribe({ defaultTables }: Props): React.JSX.Element {
     }
   }, [open]);
 
+  const resetCaptcha = useCallback((): void => {
+    setCaptcha(null);
+    if (widgetId.current !== null) window.turnstile?.reset(widgetId.current);
+  }, []);
+
   const submit = useCallback(
     (event: React.FormEvent) => {
       event.preventDefault();
       if (state === 'sending') return;
       setState('sending');
       setError(null);
-      void fetch('/api/subscribe', {
+      void fetchWithPolicy('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -86,13 +94,15 @@ export default function Subscribe({ defaultTables }: Props): React.JSX.Element {
               : 'Signup failed. Try again in a minute.';
           setState('idle');
           setError(message);
+          resetCaptcha();
         })
         .catch(() => {
           setState('idle');
           setError('Signup failed. Try again in a minute.');
+          resetCaptcha();
         });
     },
-    [state, email, firstName, tables, captcha],
+    [state, email, firstName, tables, captcha, resetCaptcha],
   );
 
   return (
@@ -172,9 +182,8 @@ export default function Subscribe({ defaultTables }: Props): React.JSX.Element {
           {error !== null && <p className="status error">{error}</p>}
 
           <p className="subscribe__note">
-            One email a week. Stored: the address, the name if you give one, and these
-            choices. The unsubscribe link in every email deletes all of it. Delivery runs
-            through Resend.
+            One email a week. Stored: the address, the name if you give one, and these choices. The
+            unsubscribe link in every email deletes all of it. Delivery runs through Resend.
           </p>
         </form>
       )}
