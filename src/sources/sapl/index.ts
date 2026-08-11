@@ -1,6 +1,7 @@
 import { detectAdmission } from '../../core/admission.js';
 import { postalCodeFrom } from '../../core/geo.js';
 import type { IsoDate } from '../../core/types.js';
+import { fetchWithPolicy } from '../../net/fetch.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { filmFromSaplEvent } from './extract.js';
@@ -92,7 +93,7 @@ export class SaplSource implements Source {
       let failure: string | null = null;
       try {
         const url = `${FEED}?startdate=${date.replace(/-/g, '')}&days=${String(DAY_WINDOW)}`;
-        const response = await fetch(url);
+        const response = await fetchWithPolicy(url);
         if (!response.ok) throw new Error(`HTTP ${String(response.status)}`);
         events = (await response.json()) as TrumbaEvent[];
       } catch (error) {
@@ -132,7 +133,10 @@ export class SaplSource implements Source {
           continue;
         }
 
-        const branch = field(event, 'Branch Location') || stripHtml(event.location) || 'San Antonio Public Library';
+        const branch =
+          field(event, 'Branch Location') ||
+          stripHtml(event.location) ||
+          'San Antonio Public Library';
         const postalCode = postalCodeFrom(field(event, 'Address'));
         if (!postalCode) {
           skipped++;

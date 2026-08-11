@@ -2,6 +2,7 @@ import { detectAdmission } from '../../core/admission.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { SCRAPER_USER_AGENT, browserHeaders } from '../../net/headers.js';
+import { fetchWithPolicy } from '../../net/fetch.js';
 import { filmFromMcnayTitle, isMcnayFilmEvent, parseMcnayEvents } from './parse.js';
 
 export const MCNAY = {
@@ -36,7 +37,7 @@ export class McnaySource implements Source {
 
     let html: string;
     try {
-      const response = await fetch(MCNAY.eventsUrl, {
+      const response = await fetchWithPolicy(MCNAY.eventsUrl, {
         headers: browserHeaders(undefined, SCRAPER_USER_AGENT),
       });
       if (!response.ok) throw new Error(`HTTP ${String(response.status)}`);

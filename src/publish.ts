@@ -18,6 +18,7 @@ import { historyKv, readHistory, recordSnapshot } from './store/history.js';
 import { unfilteredSources, DEFAULT_SECTION_OPTIONS, SECTIONS } from './core/sections.js';
 import type { ProgressUpdate, VenueDay } from './core/types.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
+import { fetchWithPolicy } from './net/fetch.js';
 import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
 
 function positiveNumber(value: string): number {
@@ -109,7 +110,7 @@ async function loadPrevious(source: string | undefined): Promise<Dataset | null>
   const target = source.replace(/(?<!:)\/{2,}/g, '/');
   try {
     const text = target.startsWith('http')
-      ? await (await fetch(target, { redirect: 'follow' })).text()
+      ? await (await fetchWithPolicy(target, { redirect: 'follow' })).text()
       : await readFile(target, 'utf8');
     const parsed: unknown = JSON.parse(text);
     return isDataset(parsed) ? parsed : null;

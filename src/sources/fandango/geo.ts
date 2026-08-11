@@ -1,5 +1,6 @@
 import type { Coords } from '../../core/geo.js';
 import { DiskCache } from '../../net/cache.js';
+import { fetchWithPolicy } from '../../net/fetch.js';
 import { browserHeaders } from '../../net/headers.js';
 export { zipCentroid } from '../../net/geocode.js';
 
@@ -31,7 +32,7 @@ function coordsFromLd(html: string): Coords | null {
 export async function theaterCoords(href: string): Promise<Coords | null> {
   return theaterCache.wrap(href, async () => {
     try {
-      const response = await fetch(`https://www.fandango.com${href}`, {
+      const response = await fetchWithPolicy(`https://www.fandango.com${href}`, {
         headers: browserHeaders(),
         redirect: 'follow',
       });

@@ -1,3 +1,5 @@
+import { fetchWithPolicy } from '../net/fetch.js';
+
 export interface OutboundEmail {
   readonly to: string;
   readonly subject: string;
@@ -19,7 +21,7 @@ const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 export function resendMailer(options: { apiKey: string; from: string }): Mailer {
   return {
     async send(email) {
-      const response = await fetch(RESEND_ENDPOINT, {
+      const response = await fetchWithPolicy(RESEND_ENDPOINT, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${options.apiKey}`,

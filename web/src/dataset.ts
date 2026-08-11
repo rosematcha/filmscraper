@@ -2,6 +2,7 @@ import { aggregate, type AliasConfig } from '@core/core/aggregate.js';
 import { filterDataset, isDataset, type Dataset } from '@core/core/dataset.js';
 import { unanchoredVenues } from '@core/core/filters.js';
 import type { Coords } from '@core/core/geo.js';
+import { fetchWithPolicy } from '@core/net/fetch.js';
 import { renderMarkdown, renderRows, type SortedMovie } from '@core/core/markdown.js';
 import { expiredTodayWarning, horizonWarning, pastDatesWarning } from '@core/core/pipeline.js';
 import { dateRange, shortenTheater } from '@core/core/notes.js';
@@ -27,7 +28,7 @@ export const ALIASES: AliasConfig = {
 /** Fetch the nightly dataset, or null when the site is running without one. */
 export async function loadDataset(): Promise<Dataset | null> {
   try {
-    const response = await fetch('data/latest.json', { cache: 'no-cache' });
+    const response = await fetchWithPolicy('data/latest.json', { cache: 'no-cache' });
     if (!response.ok) return null;
     const body: unknown = await response.json();
     return isDataset(body) ? body : null;

@@ -2,6 +2,7 @@ import { detectAdmission, firstKnown, textOf } from '../../core/admission.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { browserHeaders } from '../../net/headers.js';
+import { fetchWithPolicy } from '../../net/fetch.js';
 import { filmFromMarqueeTitle, parseMarqueeEvents } from './parse.js';
 
 export const MISSION_MARQUEE = {
@@ -36,7 +37,9 @@ export class MissionMarqueeSource implements Source {
 
     let html: string;
     try {
-      const response = await fetch(MISSION_MARQUEE.eventsUrl, { headers: browserHeaders() });
+      const response = await fetchWithPolicy(MISSION_MARQUEE.eventsUrl, {
+        headers: browserHeaders(),
+      });
       if (!response.ok) throw new Error(`HTTP ${String(response.status)}`);
       html = await response.text();
     } catch (error) {

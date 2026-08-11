@@ -3,6 +3,7 @@ import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { localDate, localTime, toVenueDays, type SimpleScreening } from '../common.js';
 import { filmFromSlabTitle, parseSlabEvents } from './parse.js';
 import { browserHeaders } from '../../net/headers.js';
+import { fetchWithPolicy } from '../../net/fetch.js';
 
 export interface SlabCalendar {
   readonly id: string;
@@ -52,7 +53,9 @@ export class SlabSource implements Source {
 
     let html: string;
     try {
-      const response = await fetch(this.calendar.calendarUrl, { headers: browserHeaders() });
+      const response = await fetchWithPolicy(this.calendar.calendarUrl, {
+        headers: browserHeaders(),
+      });
       if (!response.ok) throw new Error(`HTTP ${String(response.status)}`);
       html = await response.text();
     } catch (error) {

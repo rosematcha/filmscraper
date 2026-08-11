@@ -1,5 +1,6 @@
 import { geocodeUrl, parseGeocodeResult, type Coords } from '../core/geo.js';
 import { DiskCache } from './cache.js';
+import { fetchWithPolicy } from './fetch.js';
 import { browserHeaders } from './headers.js';
 
 const cache = new DiskCache('zip-centroid');
@@ -21,7 +22,7 @@ export async function geocodeAddress(address: string): Promise<Coords | null> {
 
   return addressCache.wrap(query, async () => {
     try {
-      const response = await fetch(geocodeUrl(query), {
+      const response = await fetchWithPolicy(geocodeUrl(query), {
         headers: { ...browserHeaders('application/json'), 'User-Agent': NOMINATIM_AGENT },
       });
       if (!response.ok) return null;
@@ -42,7 +43,7 @@ export async function geocodeAddress(address: string): Promise<Coords | null> {
 export async function zipCentroid(zip: string): Promise<Coords | null> {
   return cache.wrap(zip, async () => {
     try {
-      const response = await fetch(`https://api.zippopotam.us/us/${zip}`);
+      const response = await fetchWithPolicy(`https://api.zippopotam.us/us/${zip}`);
       if (!response.ok) return null;
       const body = (await response.json()) as {
         places?: { latitude?: string; longitude?: string }[];

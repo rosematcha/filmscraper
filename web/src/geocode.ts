@@ -1,4 +1,5 @@
 import { geocodeUrl, parseGeocodeResult, type Coords } from '@core/core/geo.js';
+import { fetchWithPolicy } from '@core/net/fetch.js';
 
 /**
  * Anchor lookups, cached in the tab.
@@ -18,10 +19,8 @@ export async function geocodeAnchor(address: string): Promise<Coords | null> {
 
   let coords: Coords | null = null;
   try {
-    const url = /^\d{5}$/.test(query)
-      ? `https://api.zippopotam.us/us/${query}`
-      : geocodeUrl(query);
-    const response = await fetch(url);
+    const url = /^\d{5}$/.test(query) ? `https://api.zippopotam.us/us/${query}` : geocodeUrl(query);
+    const response = await fetchWithPolicy(url);
     if (response.ok) {
       const body: unknown = await response.json();
       coords = /^\d{5}$/.test(query) ? zipCoords(body) : parseGeocodeResult(body);

@@ -2,6 +2,7 @@ import { detectAdmission } from '../../core/admission.js';
 import { toVenueDays, type SimpleScreening } from '../common.js';
 import type { Source, SourceRequest, SourceResult } from '../source.js';
 import { browserHeaders } from '../../net/headers.js';
+import { fetchWithPolicy } from '../../net/fetch.js';
 import {
   filmFromRubyCityTitle,
   isRubyCityFilmEvent,
@@ -31,7 +32,10 @@ function venueName(place: string): string {
 async function resolveUrl(postId: string): Promise<string> {
   const query = `https://rubycity.org/?p=${postId}`;
   try {
-    const response = await fetch(query, { method: 'HEAD', headers: browserHeaders() });
+    const response = await fetchWithPolicy(query, {
+      method: 'HEAD',
+      headers: browserHeaders(),
+    });
     return response.ok && response.url !== '' ? response.url : query;
   } catch {
     return query;
@@ -61,7 +65,9 @@ export class RubyCitySource implements Source {
 
     let html: string;
     try {
-      const response = await fetch(RUBY_CITY.eventsUrl, { headers: browserHeaders() });
+      const response = await fetchWithPolicy(RUBY_CITY.eventsUrl, {
+        headers: browserHeaders(),
+      });
       if (!response.ok) throw new Error(`HTTP ${String(response.status)}`);
       html = await response.text();
     } catch (error) {
