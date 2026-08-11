@@ -143,21 +143,12 @@ function playsAt(movie: AggregatedMovie, sourceId: string): boolean {
 /**
  * Every table, in render order.
  *
- * The highlights sit directly under the main table: they duplicate rows that
- * are already there, and their whole job is to be seen before the long list is
- * read. The partitions — which actually remove rows — follow.
+ * What changed this week leads — what opens, then what is about to go — and
+ * the standing partitions follow. Render order is not claim order: these two
+ * carry `claimRank: 1` so they collect only what the identity tables below
+ * have not already taken.
  */
 export const SECTIONS: readonly SectionDef[] = [
-  {
-    id: 'last-chance',
-    heading: 'Last chance',
-    label: 'Last chance',
-    hint: 'Runs that end before the posted schedule does',
-    mode: 'claims',
-    claimRank: 1,
-    defaultOn: true,
-    match: (movie, ctx) => classifyRun(movie.dates, ctx).shape === 'closing',
-  },
   {
     id: 'opens',
     heading: 'Opens this week',
@@ -170,6 +161,16 @@ export const SECTIONS: readonly SectionDef[] = [
       const { shape } = classifyRun(movie.dates, ctx);
       return shape === 'opens' || shape === 'presale-opens';
     },
+  },
+  {
+    id: 'last-chance',
+    heading: 'Last chance',
+    label: 'Last chance',
+    hint: 'Runs that end before the posted schedule does',
+    mode: 'claims',
+    claimRank: 1,
+    defaultOn: true,
+    match: (movie, ctx) => classifyRun(movie.dates, ctx).shape === 'closing',
   },
   {
     id: 'free',
