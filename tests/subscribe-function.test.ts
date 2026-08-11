@@ -1,5 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import subscribeHandler, { config } from '../netlify/functions/subscribe.js';
+
+beforeEach(() => {
+  // Signup only answers on the dev server, so every case past the gate has to
+  // stand where `netlify dev` stands.
+  vi.stubEnv('NETLIFY_DEV', 'true');
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -49,6 +55,20 @@ describe('subscribe function verification', () => {
     expect(
       (await subscribeHandler(request({ email: 'a@example.com', turnstileToken: 'token' }))).status,
     ).toBe(503);
+  });
+
+  it('refuses signups anywhere but the dev server', async () => {
+    // The deployed site has no Turnstile or mailer keys, so an accepted signup
+    // would promise an email nothing can send.
+    vi.stubEnv('NETLIFY_DEV', '');
+    vi.stubEnv('TURNSTILE_SECRET_KEY', 'secret');
+    vi.stubEnv('TURNSTILE_EXPECTED_HOSTNAME', 'films.example');
+    const response = await subscribeHandler(request({ email: 'a@example.com' }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: 'Signup is not available right now.',
+    });
   });
 
   it('declares an IP rate limit', () => {

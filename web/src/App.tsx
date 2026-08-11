@@ -7,6 +7,18 @@ import type { SortOrder } from '@core/core/types.js';
 import { DEFAULT_SECTION_OPTIONS } from '@core/core/sections.js';
 import { SECTIONS, SORT_ORDERS, useTablePrefs, type ViewFlags } from './tables';
 import { Menu, Section, Stepper, Word } from './controls';
+import Subscribe from './Subscribe';
+
+/**
+ * The weekly email is offered on the dev server and nowhere else.
+ *
+ * Turnstile and the mailer are not configured on the deployed site, so the
+ * signup endpoint answers every visitor with "not available right now" — an
+ * invitation the site cannot honour. Vite folds this to `false` when it builds,
+ * which drops the form from the production bundle rather than merely hiding it.
+ * Delete the guard once the keys are set.
+ */
+const SIGNUP_ENABLED = import.meta.env.DEV;
 
 /**
  * The market the scrape is centred on.
@@ -157,6 +169,7 @@ export default function App(): React.JSX.Element {
   const [datasetState, setDatasetState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const seededRadius = useRef(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
+  const [showSignup, setShowSignup] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [openSections, setOpenSections] = useState<ReadonlySet<string>>(new Set());
 
@@ -584,8 +597,24 @@ export default function App(): React.JSX.Element {
         </>
       )}
 
+      {SIGNUP_ENABLED && showSignup && <Subscribe defaultTables={tables} />}
+
       <footer>
         Maintained by <a href="https://rosematcha.com">Reese Lundquist.</a>
+        {SIGNUP_ENABLED && !showSignup && (
+          <>
+            {' '}
+            ·{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setShowSignup(true);
+              }}
+            >
+              get this weekly by email
+            </button>
+          </>
+        )}
       </footer>
     </main>
   );

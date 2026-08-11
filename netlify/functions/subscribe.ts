@@ -47,7 +47,23 @@ async function passesTurnstile(
   }
 }
 
+/**
+ * Signup is open on the local dev server and nowhere else, matching the form
+ * the site only renders there.
+ *
+ * `netlify dev` sets NETLIFY_DEV; no deployed context does. Confirm and
+ * unsubscribe stay open everywhere on purpose — a link already sitting in
+ * someone's inbox has to keep working, and refusing to unsubscribe a person is
+ * the one failure this list must never have.
+ */
+function localOnly(): boolean {
+  return process.env['NETLIFY_DEV'] === 'true';
+}
+
 export default async (request: Request): Promise<Response> => {
+  if (!localOnly()) {
+    return json(503, { ok: false, error: 'Signup is not available right now.' });
+  }
   if (request.method !== 'POST') return json(405, { ok: false, error: 'POST only' });
   const contentLength = Number(request.headers.get('content-length'));
   if (Number.isFinite(contentLength) && contentLength > 10_000) {
