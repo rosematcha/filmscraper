@@ -1,7 +1,18 @@
 import { buildNotes } from './notes.js';
-import { buildSections, DEFAULT_SECTION_OPTIONS, type SectionOptions } from './sections.js';
+import {
+  buildSections,
+  DEFAULT_SECTION_OPTIONS,
+  WIDE_THEATER_FLOOR,
+  type SectionOptions,
+} from './sections.js';
 import { detectFrontier, type RunWindow } from './run.js';
-import type { AggregatedMovie, IsoDate, RenderOptions, ScrapeResult } from './types.js';
+import type {
+  AggregatedMovie,
+  IsoDate,
+  RenderOptions,
+  ScrapeResult,
+  SortOrder,
+} from './types.js';
 
 /**
  * The dates a result can actually speak to.
@@ -74,9 +85,6 @@ export interface SortedMovie {
   readonly sectionHeading?: string | null;
 }
 
-/** Below this many venues a film reads as a limited run rather than a wide release. */
-const WIDE_THEATER_FLOOR = 4;
-
 export type Tier = 0 | 1 | 2;
 
 /**
@@ -100,14 +108,29 @@ export function tierOf(movie: AggregatedMovie): Tier {
 /**
  * Wide releases first, then limited runs, then one-night events — the order the
  * list gets written up in. Within a tier, widest reach leads.
+ *
+ * The alternatives drop the tiers entirely: asking for alphabetical or for
+ * what plays soonest is asking to find one row, not to read the column in
+ * order, and a tier boundary in the middle of that only hides things.
  */
-export function sortMovies(movies: readonly AggregatedMovie[]): AggregatedMovie[] {
+export function sortMovies(
+  movies: readonly AggregatedMovie[],
+  order: SortOrder = 'reach',
+): AggregatedMovie[] {
+  const byTitle = (a: AggregatedMovie, b: AggregatedMovie): number =>
+    a.title.localeCompare(b.title);
+  if (order === 'title') return [...movies].sort(byTitle);
+  if (order === 'soonest') {
+    return [...movies].sort(
+      (a, b) => (a.dates[0] ?? '').localeCompare(b.dates[0] ?? '') || byTitle(a, b),
+    );
+  }
   return [...movies].sort(
     (a, b) =>
       tierOf(a) - tierOf(b) ||
       b.theaters.length - a.theaters.length ||
       b.dates.length - a.dates.length ||
-      a.title.localeCompare(b.title),
+      byTitle(a, b),
   );
 }
 
@@ -143,7 +166,7 @@ export function renderRows(
 ): SortedMovie[] {
   const window = runWindow(result);
   return buildSections(result.movies, sectionOptions, window).flatMap((section) =>
-    sortMovies(section.movies).map((movie) => ({
+    sortMovies(section.movies, options.sort).map((movie) => ({
       ...toRow(movie, result, options, theaterNames, window.frontier ?? result.horizon),
       section: section.id,
       sectionHeading: section.heading,
@@ -164,7 +187,7 @@ export function renderMarkdown(
   for (const section of buildSections(result.movies, sectionOptions, window)) {
     if (section.movies.length === 0) continue;
     const lines = section.heading ? [`### ${section.heading}`, '', ...HEADER] : [...HEADER];
-    for (const movie of sortMovies(section.movies)) {
+    for (const movie of sortMovies(section.movies, options.sort)) {
       const row = toRow(movie, result, options, theaterNames, window.frontier ?? result.horizon);
       lines.push(`| ${cell(movie.title)} | ${linkCell(row)} | ${cell(row.notes)} |`);
     }

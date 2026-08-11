@@ -80,6 +80,15 @@ export interface ScrapeRequest {
   readonly radiusMiles: number;
 }
 
+/**
+ * How the rows are ordered.
+ *
+ * - `reach`   — widest first, which is how a listing column is written up.
+ * - `title`   — alphabetical, for looking one film up.
+ * - `soonest` — earliest date first, for what to see tonight.
+ */
+export type SortOrder = 'reach' | 'title' | 'soonest';
+
 export interface RenderOptions {
   /** Surface open/closed caption groups in Notes. Off by default. */
   readonly showAccessibility: boolean;
@@ -87,6 +96,8 @@ export interface RenderOptions {
   readonly showLanguage: boolean;
   /** Keep `(2026)`-style years in displayed titles. Off by default. */
   readonly keepYears: boolean;
+  /** Row order within each table; `reach` when unset. */
+  readonly sort?: SortOrder;
 }
 
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {

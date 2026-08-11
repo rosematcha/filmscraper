@@ -295,18 +295,18 @@ th:last-child {
   width: 40%;
 }
 
-/* The link colour is the ink colour now, so the underline is what marks a
-   title as clickable. It is drawn in the rule colour to stay quiet under a
-   long list and darkens on hover. */
+/* Twenty-five underlined rows read as a wall of rules rather than a list of
+   films, and every title in the column is a link anyway — so the underline
+   says nothing until the pointer is on one. */
 .title a {
   color: var(--link);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  text-decoration-color: var(--faint);
+  text-decoration: none;
 }
 
 .title a:hover {
-  text-decoration-color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--muted);
 }
 
 /* Ticket links for a row that merged several chains' listings of one event. */
@@ -321,7 +321,12 @@ th:last-child {
 
 .title__links a {
   color: var(--muted);
-  text-decoration-color: var(--rule);
+  text-decoration: none;
+}
+
+.title__links a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .notes {

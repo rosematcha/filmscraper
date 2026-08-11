@@ -135,6 +135,27 @@ export function freeEntry(movie: AggregatedMovie): AggregatedMovie {
   return { ...movie, theaters: movie.freeVenues, dates: movie.freeDates, formats: new Map() };
 }
 
+/**
+ * Below this many venues a film reads as a limited run rather than a wide
+ * release. One number, because the tier sort and the "hide wide" filter must
+ * agree about what wide means.
+ */
+export const WIDE_THEATER_FLOOR = 4;
+
+/**
+ * Whether a reach filter drops this film.
+ *
+ * Both settings prune the same axis from opposite ends: one hides what is
+ * unmissable, the other what is a single booking. Together they leave the
+ * middle — a film at a handful of theaters, which is the easiest thing to
+ * miss and the whole point of the list.
+ */
+function hiddenByReach(movie: AggregatedMovie, options: SectionOptions): boolean {
+  const venues = movie.theaters.length;
+  if (options.hideWide === true && venues >= WIDE_THEATER_FLOOR) return true;
+  return options.hideSingle === true && venues <= 1;
+}
+
 /** True when this source listed the film at all. */
 function playsAt(movie: AggregatedMovie, sourceId: string): boolean {
   return movie.sources.includes(sourceId);
@@ -251,12 +272,18 @@ export interface SectionOptions {
   readonly tables: readonly string[];
   /** Drop non-English releases from the output entirely. */
   readonly excludeForeign: boolean;
+  /** Drop films playing widely enough to be unmissable. */
+  readonly hideWide?: boolean;
+  /** Drop films playing a single theater. */
+  readonly hideSingle?: boolean;
   readonly currentYear: number;
 }
 
 export const DEFAULT_SECTION_OPTIONS: SectionOptions = {
   tables: DEFAULT_TABLE_IDS,
   excludeForeign: false,
+  hideWide: false,
+  hideSingle: false,
   currentYear: new Date().getFullYear(),
 };
 
@@ -320,6 +347,10 @@ export function buildSections(
   for (const movie of movies) {
     if (movie.foreign && options.excludeForeign) continue;
 
+    // A venue table is asked for by name, so it answers in full: the reach
+    // filters prune the listing, not the question "what is on at the library".
+    // The same reasoning already exempts these tables from the radius.
+    const hidden = hiddenByReach(movie, options);
     let claimed = false;
     // Venue tables are answered first and unconditionally: "what is on at the
     // library this week" is a question about the venue, and nearly every film
@@ -332,6 +363,7 @@ export function buildSections(
       // only a film with nowhere else to play moves.
       if (movie.sources.length === 1) claimed = true;
     }
+    if (hidden) continue;
     // A row belongs to one partition, not to every partition it qualifies for:
     // a revival that is also non-English is listed once, under whichever table
     // comes first.

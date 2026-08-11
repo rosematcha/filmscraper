@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { DEFAULT_TABLE_IDS, SECTIONS, knownTables } from '@core/core/sections.js';
+import type { SortOrder } from '@core/core/types.js';
 
 export { SECTIONS };
 
@@ -16,6 +17,8 @@ const KEY = 'filmscraper.tables.v1';
 /** The one table another setting can contradict. */
 const FOREIGN_ID = 'foreign';
 
+export const SORT_ORDERS: readonly SortOrder[] = ['reach', 'title', 'soonest'];
+
 /**
  * Settings that change how a row reads rather than which table it lands in.
  *
@@ -31,6 +34,10 @@ export interface ViewFlags {
   readonly showAccessibility: boolean;
   /** Name subtitled and dubbed bookings in the Notes cell. */
   readonly showLanguage: boolean;
+  /** Drop films playing widely enough to be unmissable. */
+  readonly hideWide: boolean;
+  /** Drop films playing a single theater. */
+  readonly hideSingle: boolean;
 }
 
 export const DEFAULT_FLAGS: ViewFlags = {
@@ -38,6 +45,8 @@ export const DEFAULT_FLAGS: ViewFlags = {
   keepYears: false,
   showAccessibility: false,
   showLanguage: false,
+  hideWide: false,
+  hideSingle: false,
 };
 
 interface StoredTables {
@@ -46,6 +55,7 @@ interface StoredTables {
   /** Tables explicitly turned off, so a new default-on table is not resurrected. */
   readonly off: readonly string[];
   readonly flags: ViewFlags;
+  readonly sort: SortOrder;
 }
 
 function read(): StoredTables | null {
@@ -68,7 +78,10 @@ function read(): StoredTables | null {
         keepYears: flag('keepYears'),
         showAccessibility: flag('showAccessibility'),
         showLanguage: flag('showLanguage'),
+        hideWide: flag('hideWide'),
+        hideSingle: flag('hideSingle'),
       },
+      sort: SORT_ORDERS.includes(record.sort as SortOrder) ? (record.sort as SortOrder) : 'reach',
     };
   } catch {
     // A private-mode browser or a hand-edited entry: the defaults are a
@@ -104,8 +117,10 @@ function resolve(stored: StoredTables | null): string[] {
 export interface TablePrefs {
   readonly tables: string[];
   readonly flags: ViewFlags;
+  readonly sort: SortOrder;
   readonly setTable: (id: string, enabled: boolean) => void;
   readonly setFlag: (key: keyof ViewFlags, value: boolean) => void;
+  readonly setSort: (order: SortOrder) => void;
 }
 
 /** The table checklist, remembered across visits. */
@@ -118,8 +133,9 @@ export function useTablePrefs(): TablePrefs {
 
   const setTable = useCallback((id: string, enabled: boolean) => {
     setStored((prev) => {
-      const base = prev ?? { on: [], off: [], flags: DEFAULT_FLAGS };
+      const base = prev ?? { on: [], off: [], flags: DEFAULT_FLAGS, sort: 'reach' as SortOrder };
       const next: StoredTables = {
+        ...base,
         on: enabled ? [...new Set([...base.on, id])] : base.on.filter((x) => x !== id),
         off: enabled ? base.off.filter((x) => x !== id) : [...new Set([...base.off, id])],
         // Asking for the table means wanting to see those films, which is the
@@ -137,11 +153,12 @@ export function useTablePrefs(): TablePrefs {
 
   const setFlag = useCallback((key: keyof ViewFlags, value: boolean) => {
     setStored((prev) => {
-      const base = prev ?? { on: [], off: [], flags: DEFAULT_FLAGS };
+      const base = prev ?? { on: [], off: [], flags: DEFAULT_FLAGS, sort: 'reach' as SortOrder };
       const drops = key === 'excludeForeign' && value;
       // Dropping the films takes their table with it, visibly: the word goes
       // struck through in the same menu rather than the table just vanishing.
       const next: StoredTables = {
+        ...base,
         on: drops ? base.on.filter((x) => x !== FOREIGN_ID) : base.on,
         off: drops ? [...new Set([...base.off, FOREIGN_ID])] : base.off,
         flags: { ...base.flags, [key]: value },
@@ -151,10 +168,21 @@ export function useTablePrefs(): TablePrefs {
     });
   }, []);
 
+  const setSort = useCallback((order: SortOrder) => {
+    setStored((prev) => {
+      const base = prev ?? { on: [], off: [], flags: DEFAULT_FLAGS, sort: 'reach' as SortOrder };
+      const next: StoredTables = { ...base, sort: order };
+      write(next);
+      return next;
+    });
+  }, []);
+
   return {
     tables,
     flags: stored?.flags ?? DEFAULT_FLAGS,
+    sort: stored?.sort ?? 'reach',
     setTable,
     setFlag,
+    setSort,
   };
 }

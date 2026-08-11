@@ -3,8 +3,9 @@ import { ALIASES, loadDataset, renderDataset, type Dataset } from './dataset';
 import { geocodeAnchor } from './geocode';
 import { chainIds, chainLabel } from '@core/core/chains.js';
 import type { Coords } from '@core/core/geo.js';
+import type { SortOrder } from '@core/core/types.js';
 import { DEFAULT_SECTION_OPTIONS } from '@core/core/sections.js';
-import { SECTIONS, useTablePrefs, type ViewFlags } from './tables';
+import { SECTIONS, SORT_ORDERS, useTablePrefs, type ViewFlags } from './tables';
 import Subscribe from './Subscribe';
 import { Menu, Section, Stepper, Word } from './controls';
 
@@ -32,11 +33,20 @@ const DEFAULT_WINDOW_DAYS = 7;
  * blank Notes cell is a correct and common answer.
  */
 const VIEW_FLAGS: readonly [keyof ViewFlags, string, string][] = [
+  ['hideWide', 'Hide wide releases', 'Drops anything at four or more theaters'],
+  ['hideSingle', 'Hide single-theater films', 'Drops one-off bookings'],
   ['showAccessibility', 'Show open captions', 'Names the captioned bookings'],
   ['showLanguage', 'Show subtitles and dubs', 'Names subtitled and dubbed showings'],
   ['keepYears', 'Keep years in titles', 'Leaves “(2026)” where the listing had it'],
   ['excludeForeign', 'Drop non-English entirely', 'Removes them rather than tabling them'],
 ];
+
+/** What each sort order is for, shown beside its word. */
+const SORT_LABELS: Record<SortOrder, [string, string]> = {
+  reach: ['Widest first', 'Wide releases, then limited runs, then one-nighters'],
+  title: ['By title', 'Alphabetical, for looking one film up'],
+  soonest: ['Soonest first', 'Earliest date first, for tonight'],
+};
 
 /** Today in the market's timezone, which is the only window that makes sense as a default. */
 function today(): string {
@@ -144,7 +154,7 @@ export default function App(): React.JSX.Element {
   const [anchor, setAnchor] = useState<Coords | null>(null);
   const [anchorState, setAnchorState] = useState<'idle' | 'looking' | 'failed'>('idle');
 
-  const { tables, flags, setTable, setFlag } = useTablePrefs();
+  const { tables, flags, sort, setTable, setFlag, setSort } = useTablePrefs();
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const seededRadius = useRef(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
@@ -212,11 +222,14 @@ export default function App(): React.JSX.Element {
           keepYears: flags.keepYears,
           showAccessibility: flags.showAccessibility,
           showLanguage: flags.showLanguage,
+          sort,
         },
         {
           ...DEFAULT_SECTION_OPTIONS,
           tables,
           excludeForeign: flags.excludeForeign,
+          hideWide: flags.hideWide,
+          hideSingle: flags.hideSingle,
           currentYear: Number(from.slice(0, 4)),
         },
         ALIASES,
@@ -224,7 +237,7 @@ export default function App(): React.JSX.Element {
     } catch {
       return null;
     }
-  }, [dataset, from, to, effectiveRadius, tables, flags, excludedChains, anchor]);
+  }, [dataset, from, to, effectiveRadius, tables, flags, sort, excludedChains, anchor]);
 
   const rows = useMemo(
     () =>
@@ -411,6 +424,20 @@ export default function App(): React.JSX.Element {
               hint={section.hint}
               onToggle={() => {
                 setTable(section.id, !tables.includes(section.id));
+              }}
+            />
+          ))}
+        </Menu>
+
+        <Menu label="sort" count={SORT_LABELS[sort][0].toLowerCase()} align="right">
+          {SORT_ORDERS.map((order) => (
+            <Word
+              key={order}
+              on={sort === order}
+              label={SORT_LABELS[order][0]}
+              hint={SORT_LABELS[order][1]}
+              onToggle={() => {
+                setSort(order);
               }}
             />
           ))}

@@ -435,6 +435,42 @@ describe('highlight tables', () => {
     const sections = buildSections([film('Spider-Man', week)], only('free'), window);
     expect(sections.find((s) => s.id === 'free')).toBeUndefined();
   });
+
+  describe('reach filters', () => {
+    const wide = film('Wide', week, { theaters: ['A', 'B', 'C', 'D', 'E'] });
+    const middle = film('Middle', week, { theaters: ['A', 'B'] });
+    const single = film('Single', week, { theaters: ['A'] });
+    const all = [wide, middle, single];
+
+    it('drops wide releases and keeps the rest', () => {
+      const sections = buildSections(all, { ...only(), hideWide: true }, window);
+      expect(titles(sections, 'main')).toEqual(['Middle', 'Single']);
+    });
+
+    it('drops one-theater bookings and keeps the rest', () => {
+      const sections = buildSections(all, { ...only(), hideSingle: true }, window);
+      expect(titles(sections, 'main')).toEqual(['Wide', 'Middle']);
+    });
+
+    it('leaves only the middle when both are on', () => {
+      const sections = buildSections(all, { ...only(), hideWide: true, hideSingle: true }, window);
+      expect(titles(sections, 'main')).toEqual(['Middle']);
+    });
+
+    it('still answers a venue table in full', () => {
+      // "What is on at the library" is asked for by name, so pruning the
+      // listing must not prune the answer — the same reasoning that exempts
+      // these tables from the radius.
+      const atLibrary = film('Library Only', week, { theaters: ['Central'], sources: ['sapl'] });
+      const sections = buildSections(
+        [atLibrary],
+        { ...only('library'), hideSingle: true },
+        window,
+      );
+      expect(titles(sections, 'library')).toEqual(['Library Only']);
+      expect(titles(sections, 'main')).toEqual([]);
+    });
+  });
 });
 
 describe('claimed rows', () => {
@@ -480,4 +516,5 @@ describe('claimed rows', () => {
     const listed = sections.filter((s) => s.movies.some((m) => m.title === 'Old Foreign Film'));
     expect(listed.map((s) => s.id)).toEqual(['foreign']);
   });
+
 });
