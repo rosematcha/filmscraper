@@ -7,8 +7,9 @@
  * hammers the calendars for nothing or lets the multiplex data go stale.
  *
  * All times are UTC, matching GitHub's cron. San Antonio is UTC-5 on CDT, so
- * 17:00 UTC is local noon for the months this schedule was tuned for; 18:00
- * UTC is the long-standing evening slot every calendar source shares.
+ * 17:00 UTC is local noon for the months this schedule was tuned for — the slot
+ * every calendar source shares, at the head of Fandango's midweek watch; 18:00
+ * UTC is the evening slot the weekend scrapes use.
  */
 
 export interface ScheduleRule {
@@ -18,11 +19,10 @@ export interface ScheduleRule {
   readonly hours: readonly number[];
 }
 
-export const SUNDAY = 0;
-export const MONDAY = 1;
 export const TUESDAY = 2;
 export const WEDNESDAY = 3;
 export const THURSDAY = 4;
+export const SATURDAY = 6;
 
 /** Inclusive run of hours, so the windows below read as the clock does. */
 function hours(from: number, to: number): number[] {
@@ -30,34 +30,40 @@ function hours(from: number, to: number): number[] {
 }
 
 export const SCHEDULES: Readonly<Record<string, readonly ScheduleRule[]>> = {
-  // Once each on Monday and Thursday, when the new week's grids and the
-  // weekend's go up, plus an hourly watch from Tuesday noon to Wednesday noon
-  // local — the stretch where showtimes churn and screenings sell out. The
-  // overnight hours are skipped: nothing moves between 10pm and 4am.
+  // Once on Saturday, when the coming week's grids are up, plus an hourly watch
+  // from Tuesday noon to Wednesday noon local — the stretch where showtimes
+  // churn and screenings sell out. The overnight hours are skipped: nothing
+  // moves between 10pm and 4am.
   //
   //   Tue 17:00–23:00 UTC = Tue noon–6pm CDT
   //   Wed 00:00–02:00 UTC = Tue 7pm–9pm CDT
   //   (Tue 10pm – Wed 4am CDT is dark)
   //   Wed 09:00–17:00 UTC = Wed 4am–noon CDT
   fandango: [
-    { days: [MONDAY, THURSDAY], hours: [18] },
+    { days: [SATURDAY], hours: [18] },
     { days: [TUESDAY], hours: hours(17, 23) },
     { days: [WEDNESDAY], hours: [...hours(0, 2), ...hours(9, 17)] },
   ],
   // Wix calendars are published in batches and rarely change mid-week.
-  'slab-arthouse': [{ days: [SUNDAY], hours: [18] }],
-  'slab-outdoor': [{ days: [SUNDAY], hours: [18] }],
+  'slab-arthouse': [{ days: [TUESDAY], hours: [17] }],
+  'slab-outdoor': [{ days: [TUESDAY], hours: [17] }],
   // Same outdoor season as Slab's Wix calendar; the venue page carries richer copy.
-  'mission-marquee': [{ days: [SUNDAY], hours: [18] }],
+  'mission-marquee': [{ days: [TUESDAY], hours: [17] }],
   // Monthly cinema lineup; the season page changes rarely once published.
-  'tobin-cinema': [{ days: [SUNDAY], hours: [18] }],
+  'tobin-cinema': [{ days: [TUESDAY], hours: [17] }],
   // The museum screens a film every month or two; a weekly look is generous.
-  mcnay: [{ days: [SUNDAY], hours: [18] }],
+  mcnay: [{ days: [TUESDAY], hours: [17] }],
   // Two screenings in the museum's history, so weekly is already optimistic.
-  'ruby-city': [{ days: [SUNDAY], hours: [18] }],
+  'ruby-city': [{ days: [TUESDAY], hours: [17] }],
   // Twice a week: the drive-in posts its week, the library its programme.
-  'stars-and-stripes': [{ days: [SUNDAY, THURSDAY], hours: [18] }],
-  sapl: [{ days: [SUNDAY, THURSDAY], hours: [18] }],
+  'stars-and-stripes': [
+    { days: [TUESDAY], hours: [17] },
+    { days: [THURSDAY], hours: [18] },
+  ],
+  sapl: [
+    { days: [TUESDAY], hours: [17] },
+    { days: [THURSDAY], hours: [18] },
+  ],
 };
 
 function matches(rule: ScheduleRule, day: number, hour: number): boolean {
@@ -98,12 +104,17 @@ export function dueSources(at: Date): string[] {
     .sort();
 }
 
-/** The twice-weekly Fandango runs that rediscover every venue and date. */
+/**
+ * The Fandango runs that rediscover every venue and date.
+ *
+ * Saturday's standalone slot, and the first hour of the midweek watch — the
+ * rest of that window re-scrapes only the schedules that look incomplete, so
+ * it needs a full sweep to start from.
+ */
 export function isComprehensiveFandangoRun(at: Date): boolean {
-  return (
-    (at.getUTCDay() === MONDAY || at.getUTCDay() === THURSDAY) &&
-    at.getUTCHours() === 18
-  );
+  const day = at.getUTCDay();
+  const hour = at.getUTCHours();
+  return (day === SATURDAY && hour === 18) || (day === TUESDAY && hour === 17);
 }
 
 /** Every source, for a manual run. */

@@ -21,21 +21,19 @@ const at = (day: number, hour: number): Date => {
 const ALL_HOURS = Array.from({ length: 24 }, (_, h) => h);
 
 describe('dueSources', () => {
-  it('marks only Monday and Thursday evening as comprehensive Fandango runs', () => {
-    expect(isComprehensiveFandangoRun(at(1, 18))).toBe(true);
-    expect(isComprehensiveFandangoRun(at(4, 18))).toBe(true);
+  it('marks Saturday evening and the head of the midweek watch as comprehensive', () => {
+    expect(isComprehensiveFandangoRun(at(6, 18))).toBe(true);
+    expect(isComprehensiveFandangoRun(at(2, 17))).toBe(true);
+    // Every later hour of the watch re-scrapes only what looks incomplete.
     expect(isComprehensiveFandangoRun(at(2, 18))).toBe(false);
-    expect(isComprehensiveFandangoRun(at(1, 17))).toBe(false);
+    expect(isComprehensiveFandangoRun(at(3, 9))).toBe(false);
+    expect(isComprehensiveFandangoRun(at(6, 17))).toBe(false);
   });
 
-  it('runs Fandango once on Monday and once on Thursday', () => {
-    for (const day of [1, 4]) {
-      expect(dueSources(at(day, 18)), `day ${String(day)} 18:00`).toContain('fandango');
-      for (const hour of ALL_HOURS.filter((h) => h !== 18)) {
-        expect(dueSources(at(day, hour)), `day ${String(day)} ${String(hour)}:00`).not.toContain(
-          'fandango',
-        );
-      }
+  it('runs Fandango once on Saturday', () => {
+    expect(dueSources(at(6, 18))).toContain('fandango');
+    for (const hour of ALL_HOURS.filter((h) => h !== 18)) {
+      expect(dueSources(at(6, hour)), `Saturday ${String(hour)}:00`).not.toContain('fandango');
     }
   });
 
@@ -62,7 +60,7 @@ describe('dueSources', () => {
   });
 
   it('leaves Fandango alone for the rest of the week', () => {
-    for (const day of [0, 5, 6]) {
+    for (const day of [0, 1, 4, 5]) {
       for (const hour of ALL_HOURS) {
         expect(dueSources(at(day, hour)), `day ${String(day)} ${String(hour)}:00`).not.toContain(
           'fandango',
@@ -71,7 +69,7 @@ describe('dueSources', () => {
     }
   });
 
-  it('runs the venue calendars weekly on Sunday only', () => {
+  it('runs the venue calendars weekly at Tuesday noon only', () => {
     const weekly = [
       'slab-arthouse',
       'slab-outdoor',
@@ -80,21 +78,28 @@ describe('dueSources', () => {
       'mcnay',
       'ruby-city',
     ];
-    expect(dueSources(at(0, 18))).toEqual(expect.arrayContaining(weekly));
-    for (const day of [1, 2, 3, 4, 5, 6]) {
-      for (const id of weekly) {
-        expect(dueSources(at(day, 18)), `${id} on day ${String(day)}`).not.toContain(id);
+    expect(dueSources(at(2, 17))).toEqual(expect.arrayContaining(weekly));
+    for (const day of [0, 1, 3, 4, 5, 6]) {
+      for (const hour of ALL_HOURS) {
+        for (const id of weekly) {
+          expect(dueSources(at(day, hour)), `${id} on day ${String(day)}`).not.toContain(id);
+        }
       }
     }
+    // Not carried through the rest of the Fandango watch either.
+    for (const id of weekly) expect(dueSources(at(2, 18))).not.toContain(id);
   });
 
-  it('runs the drive-in and library on Sunday and Thursday', () => {
-    for (const day of [0, 4]) {
-      expect(dueSources(at(day, 18))).toEqual(
+  it('runs the drive-in and library on Tuesday and Thursday', () => {
+    for (const [day, hour] of [
+      [2, 17],
+      [4, 18],
+    ] as const) {
+      expect(dueSources(at(day, hour))).toEqual(
         expect.arrayContaining(['stars-and-stripes', 'sapl']),
       );
     }
-    for (const day of [1, 2, 3, 5, 6]) {
+    for (const day of [0, 1, 3, 5, 6]) {
       expect(dueSources(at(day, 18)), `day ${String(day)}`).not.toContain('stars-and-stripes');
       expect(dueSources(at(day, 18)), `day ${String(day)}`).not.toContain('sapl');
     }
@@ -103,18 +108,19 @@ describe('dueSources', () => {
   it('is empty off the scheduled hours', () => {
     expect(dueSources(at(1, 3))).toEqual([]);
     expect(dueSources(at(4, 17))).toEqual([]);
+    expect(dueSources(at(0, 18))).toEqual([]);
   });
 
-  it('covers every calendar source on a Sunday evening', () => {
-    // The one slot where the venue calendars line up. Fandango sits it out; its
-    // week starts Monday evening.
-    const expected = allSources().filter((id) => id !== 'fandango');
-    expect(dueSources(at(0, 18)).sort()).toEqual(expected);
+  it('covers every source at Tuesday noon', () => {
+    // The one slot where everything lines up: the venue calendars, and the full
+    // Fandango sweep the rest of the midweek watch works from.
+    expect(dueSources(at(2, 17)).sort()).toEqual(allSources());
+    expect(isComprehensiveFandangoRun(at(2, 17))).toBe(true);
   });
 
   it('describes each cadence in plain words', () => {
-    expect(describeSchedule('fandango')).toMatch(/Monday and Thursday/);
-    expect(describeSchedule('slab-arthouse')).toMatch(/Sunday/);
+    expect(describeSchedule('fandango')).toMatch(/Saturday/);
+    expect(describeSchedule('slab-arthouse')).toMatch(/Tuesday/);
     expect(describeSchedule('unknown-source')).toBe('on demand');
   });
 });

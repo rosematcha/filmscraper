@@ -6,13 +6,14 @@ on:
     # decides which sources a given slot actually scrapes; tests/schedule.test.ts
     # parses the lines below and fails if the two drift apart.
     #
-    # The shared evening slot: every calendar source, plus Fandango's Monday and
-    # Thursday runs.
-    - cron: '0 18 * * 0,1,4'
     # Fandango's hourly watch, Tuesday noon to Wednesday noon CDT (UTC-5), dark
-    # from 10pm to 4am local.
+    # from 10pm to 4am local. Its first hour is also the shared slot every
+    # calendar source runs in.
     - cron: '0 17-23 * * 2'
     - cron: '0 0-2,9-17 * * 3'
+    # The evening slot: Thursday for the drive-in and the library, Saturday for
+    # Fandango's full sweep of the coming week.
+    - cron: '0 18 * * 4,6'
   workflow_dispatch:
     inputs:
       radius:
