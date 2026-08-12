@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { pageDistances, parseAmenityGroup, parseMiles } from '../src/sources/fandango/parse.js';
+import {
+  pageDistances,
+  parseAmenityGroup,
+  parseMiles,
+  parseShowtimesPage,
+} from '../src/sources/fandango/parse.js';
 import { fixture, fixtureVenueDays, findMovie } from './helpers.js';
 
 describe('parseMiles', () => {
@@ -59,6 +64,7 @@ describe('parseShowtimesPage', () => {
     expect(nearest.theater.name).toBe('AMC Rivercenter 11 with Alamo IMAX');
     expect(nearest.theater.miles).toBe(0.12);
     expect(nearest.theater.href).toContain('/theater-page');
+    expect(nearest.theater.href).not.toContain('?date=');
   });
 
   it('keeps every theater inside the radius, including the far page', () => {
@@ -91,6 +97,36 @@ describe('parseShowtimesPage', () => {
     const all = evening.flatMap((d) => d.movies.flatMap((m) => m.groups.flatMap((g) => g.showtimes)));
     expect(all.some((s) => s.expired)).toBe(true);
     expect(all.some((s) => !s.expired)).toBe(true);
+  });
+
+  it('parses a direct theater page without a ZIP-result wrapper', () => {
+    const amenity = JSON.stringify({
+      amenities: [{ id: 1, name: 'Standard' }],
+      isDolby: false,
+      movieVariantId: 42,
+      showtimes: [{ date: '7:00p', expired: false }],
+    }).replaceAll('"', '&quot;');
+    const html = `
+      <h1 class="theater-details-header__heading">Rivercenter</h1>
+      <div class="theater-details-header__addy">849 E Commerce St</div>
+      <article class="shared-movie-showtimes">
+        <h3 class="shared-movie-showtimes__movie-title">
+          <a href="/film-42/movie-overview">Film 42</a>
+        </h3>
+        <button class="js-amenity-btn" data-amenity-group="${amenity}"></button>
+      </article>`;
+    const [day] = parseShowtimesPage(html, '2026-08-12', {
+      name: 'old name',
+      href: '/rivercenter-aaxyz/theater-page',
+      miles: 0.12,
+    });
+    expect(day?.theater).toEqual({
+      name: 'Rivercenter',
+      href: '/rivercenter-aaxyz/theater-page',
+      miles: 0.12,
+      address: '849 E Commerce St',
+    });
+    expect(day?.movies.map((movie) => movie.title)).toEqual(['Film 42']);
   });
 });
 

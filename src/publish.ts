@@ -11,7 +11,8 @@ import { dirname } from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
 import { loadAliases } from './core/config.js';
 import { isDataset, mergeDataset, type Dataset } from './core/dataset.js';
-import { allSources, dueSources } from './core/schedule.js';
+import { dateRange } from './core/notes.js';
+import { allSources, dueSources, isComprehensiveFandangoRun } from './core/schedule.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
 import { laggingSources, postingSnapshot } from './core/posting.js';
 import { historyKv, readHistory, recordSnapshot } from './store/history.js';
@@ -20,6 +21,8 @@ import type { ProgressUpdate, VenueDay } from './core/types.js';
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
 import { fetchWithPolicy } from './net/fetch.js';
 import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
+import type { FandangoSourceOptions } from './sources/fandango/index.js';
+import { planFandangoRescrape } from './sources/fandango/rescrape.js';
 
 function positiveNumber(value: string): number {
   const parsed = Number(value);
@@ -120,6 +123,7 @@ async function loadPrevious(source: string | undefined): Promise<Dataset | null>
 }
 
 const previous = await loadPrevious(options.mergeFrom);
+const aliases = await loadAliases();
 
 const unknownSources = (options.sources ?? []).filter(
   (id) => !SOURCES.some((source) => source.id === id),
@@ -129,14 +133,64 @@ if (unknownSources.length > 0) {
   process.exit(1);
 }
 
+const scheduledAt = new Date();
 const requested = options.all
   ? allSources()
-  : (options.sources ?? dueSources(new Date())).filter((id) => DEFAULT_SOURCE_IDS.includes(id));
+  : (options.sources ?? dueSources(scheduledAt)).filter((id) => DEFAULT_SOURCE_IDS.includes(id));
 
 // Nothing carried over means nothing to preserve, so scrape the lot.
-const sourceIds = previous === null ? allSources() : requested;
+let sourceIds = previous === null ? allSources() : requested;
+let fandangoOptions: Omit<FandangoSourceOptions, 'concurrency'> = {};
 if (previous === null && !options.all && requested.length !== sourceIds.length) {
   log('No previous dataset available; scraping every source so the output is complete.');
+}
+
+const compatiblePrevious =
+  previous !== null && previous.zip === options.zip && previous.radiusMiles === options.radius;
+const scheduledHourlyFandango =
+  sourceIds.includes('fandango') &&
+  options.sources === undefined &&
+  !options.all &&
+  !isComprehensiveFandangoRun(scheduledAt) &&
+  compatiblePrevious;
+
+if (scheduledHourlyFandango) {
+  const dates = dateRange(from, to);
+  const plan = planFandangoRescrape(
+    previous.days,
+    dates,
+    from,
+    previous.horizon < from ? from : previous.horizon > to ? to : previous.horizon,
+    aliases.sentinels,
+  );
+  const baselineDays = previous.days;
+  if (plan.targets.length > 0 && plan.efficient) {
+    fandangoOptions = { targets: plan.targets, baselineDays };
+    log(
+      `Hourly Fandango refresh: ${String(plan.targets.length)} lagging theater(s), ` +
+        `${String(plan.targetedPageReads)} direct page(s) versus at least ` +
+        `${String(plan.comprehensivePageReads)} ZIP result page(s).`,
+    );
+  } else if (plan.targets.length > 0) {
+    const datesToRefresh = [...new Set(plan.targets.flatMap((target) => target.dates))];
+    fandangoOptions = { dates: datesToRefresh, baselineDays };
+    log(
+      `Hourly Fandango refresh: ZIP search is cheaper than ` +
+        `${String(plan.targetedPageReads)} direct theater page(s); refreshing ` +
+        `${String(datesToRefresh.length)} incomplete date(s).`,
+    );
+  } else {
+    const next = new Date(`${previous.horizon}T12:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    const probe = next.toISOString().slice(0, 10);
+    if (probe >= from && probe <= to) {
+      fandangoOptions = { dates: [probe], baselineDays };
+      log(`Hourly Fandango refresh: no laggards; probing the next unposted date (${probe}).`);
+    } else {
+      sourceIds = sourceIds.filter((id) => id !== 'fandango');
+      log('Hourly Fandango refresh: every theater is already posted through the window.');
+    }
+  }
 }
 
 if (sourceIds.length === 0) {
@@ -151,14 +205,13 @@ const session = new BrowserSession({
 
 try {
   if (needsBrowser(sourceIds)) await session.open();
-  const aliases = await loadAliases();
   log(
     `Scraping ${options.zip} · ${from} → ${to} · ${String(options.radius)} mi · ` +
       `${sourceIds.join(', ')}${previous ? ' (merging with previous)' : ''}`,
   );
 
   const result = await runPipeline(
-    buildSources(sourceIds, session, options.concurrency),
+    buildSources(sourceIds, session, options.concurrency, fandangoOptions),
     { zip: options.zip, from, to, radiusMiles: options.radius },
     {
       aliases,

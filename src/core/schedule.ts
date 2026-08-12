@@ -98,6 +98,14 @@ export function dueSources(at: Date): string[] {
     .sort();
 }
 
+/** The twice-weekly Fandango runs that rediscover every venue and date. */
+export function isComprehensiveFandangoRun(at: Date): boolean {
+  return (
+    (at.getUTCDay() === MONDAY || at.getUTCDay() === THURSDAY) &&
+    at.getUTCHours() === 18
+  );
+}
+
 /** Every source, for a manual run. */
 export function allSources(): string[] {
   return Object.keys(SCHEDULES).sort();

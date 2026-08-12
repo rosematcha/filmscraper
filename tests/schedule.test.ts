@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mergeDataset, DATASET_VERSION, type Dataset } from '../src/core/dataset.js';
-import { allSources, describeSchedule, dueSources, runSlots } from '../src/core/schedule.js';
+import {
+  allSources,
+  describeSchedule,
+  dueSources,
+  isComprehensiveFandangoRun,
+  runSlots,
+} from '../src/core/schedule.js';
 import type { VenueDay } from '../src/core/types.js';
 
 /** A UTC instant on a given weekday, 0 = Sunday. */
@@ -15,6 +21,13 @@ const at = (day: number, hour: number): Date => {
 const ALL_HOURS = Array.from({ length: 24 }, (_, h) => h);
 
 describe('dueSources', () => {
+  it('marks only Monday and Thursday evening as comprehensive Fandango runs', () => {
+    expect(isComprehensiveFandangoRun(at(1, 18))).toBe(true);
+    expect(isComprehensiveFandangoRun(at(4, 18))).toBe(true);
+    expect(isComprehensiveFandangoRun(at(2, 18))).toBe(false);
+    expect(isComprehensiveFandangoRun(at(1, 17))).toBe(false);
+  });
+
   it('runs Fandango once on Monday and once on Thursday', () => {
     for (const day of [1, 4]) {
       expect(dueSources(at(day, 18)), `day ${String(day)} 18:00`).toContain('fandango');

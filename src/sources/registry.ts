@@ -1,6 +1,6 @@
 import type { BrowserSession } from '../net/browser.js';
 import { DriveInSource, STARS_AND_STRIPES } from './driveIn/index.js';
-import { FandangoSource } from './fandango/index.js';
+import { FandangoSource, type FandangoSourceOptions } from './fandango/index.js';
 import { SaplSource } from './sapl/index.js';
 import { MCNAY, McnaySource } from './mcnay/index.js';
 import { MISSION_MARQUEE, MissionMarqueeSource } from './missionMarquee/index.js';
@@ -53,10 +53,13 @@ export function buildSources(
   ids: readonly string[],
   session: BrowserSession,
   concurrency = 1,
+  fandangoOptions: Omit<FandangoSourceOptions, 'concurrency'> = {},
 ): Source[] {
   const wanted = new Set(ids);
   const sources: Source[] = [];
-  if (wanted.has('fandango')) sources.push(new FandangoSource(session, concurrency));
+  if (wanted.has('fandango')) {
+    sources.push(new FandangoSource(session, { ...fandangoOptions, concurrency }));
+  }
   if (wanted.has(SLAB_ARTHOUSE.id)) sources.push(new SlabSource(SLAB_ARTHOUSE));
   if (wanted.has(SLAB_OUTDOOR.id)) sources.push(new SlabSource(SLAB_OUTDOOR));
   if (wanted.has(MISSION_MARQUEE.id)) sources.push(new MissionMarqueeSource());

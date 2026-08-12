@@ -1,6 +1,6 @@
 import type { Page } from 'playwright';
 import { BrowserSession, gotoWithRetry } from '../../net/browser.js';
-import type { IsoDate, ScrapeWarning, VenueDay } from '../../core/types.js';
+import type { IsoDate, ScrapeWarning, Theater, VenueDay } from '../../core/types.js';
 import { pageDistances, parseShowtimesPage } from './parse.js';
 import {
   isCapped,
@@ -65,6 +65,107 @@ async function exhaustLazyLoad(page: Page): Promise<void> {
     await page.mouse.wheel(0, 4000);
     await page.waitForTimeout(500);
   }
+}
+
+export interface TheaterTarget {
+  readonly theater: Theater;
+  readonly dates: readonly IsoDate[];
+}
+
+export interface TargetedHarvestResult {
+  readonly days: VenueDay[];
+  readonly warnings: ScrapeWarning[];
+  /** Venue/date pairs successfully read, including pages with no movies. */
+  readonly completed: ReadonlySet<string>;
+}
+
+export function venueDateKey(href: string, date: IsoDate): string {
+  return `${venueKey(href)}\0${date}`;
+}
+
+export function theaterPageUrl(href: string, date: IsoDate): string {
+  const url = new URL(venueKey(href), SITE);
+  url.searchParams.set('date', date);
+  return url.toString();
+}
+
+/**
+ * Read known theaters directly, without repeating ZIP discovery or nearby-
+ * theater pagination. The caller supplies only dates whose grids are still
+ * incomplete; comprehensive runs continue through `harvestFandango`.
+ */
+export async function harvestFandangoTheaters(
+  session: BrowserSession,
+  targets: readonly TheaterTarget[],
+  options: Pick<HarvestOptions, 'concurrency' | 'onProgress'>,
+): Promise<TargetedHarvestResult> {
+  const jobs = targets.flatMap((target) =>
+    target.dates.map((date) => ({ theater: target.theater, date })),
+  );
+  const onProgress = options.onProgress ?? ((): void => undefined);
+  const active = new Set<string>();
+  let completedCount = 0;
+  const report = (message: string): void => {
+    onProgress(message, completedCount, jobs.length, [...active]);
+  };
+
+  const outcomes = await pool(jobs, clampConcurrency(options.concurrency), async (job) => {
+    const key = venueKey(job.theater.href);
+    const label = `${job.theater.name} · ${job.date}`;
+    active.add(label);
+    report(`${label} · loading`);
+    const page = await session.newPage();
+    try {
+      await session.throttle();
+      await gotoWithRetry(page, theaterPageUrl(key, job.date));
+      await page
+        .waitForSelector('a[href*="/theater-page"]', { timeout: 45_000 })
+        .catch(() => undefined);
+      await exhaustLazyLoad(page);
+      const parsed = parseShowtimesPage(await page.content(), job.date, job.theater).find(
+        (day) => venueKey(day.theater.href) === key,
+      );
+      if (!parsed) {
+        return {
+          day: null,
+          warning: {
+            kind: 'page-error' as const,
+            message: `No theater parsed at ${key} for ${job.date}; the previous listing was retained.`,
+          },
+        };
+      }
+      // A direct page's distance can be absent or relative to browser state.
+      // The comprehensive scrape already measured this stable venue metadata.
+      const theater = job.theater.name === key ? { ...parsed.theater, href: key } : job.theater;
+      return { day: { ...parsed, theater }, warning: null };
+    } catch (error) {
+      return {
+        day: null,
+        warning: {
+          kind: 'page-error' as const,
+          message: `Fandango failed at ${key} for ${job.date} (${error instanceof Error ? error.message : String(error)}); the previous listing was retained.`,
+        },
+      };
+    } finally {
+      await page.close();
+      active.delete(label);
+      completedCount++;
+      report(`${label} · done`);
+    }
+  });
+
+  const days: VenueDay[] = [];
+  const warnings: ScrapeWarning[] = [];
+  const completed = new Set<string>();
+  outcomes.forEach((outcome, index) => {
+    if (outcome.day) {
+      days.push(outcome.day);
+      const job = jobs[index];
+      if (job) completed.add(venueDateKey(job.theater.href, job.date));
+    }
+    if (outcome.warning) warnings.push(outcome.warning);
+  });
+  return { days, warnings, completed };
 }
 
 /**

@@ -54,7 +54,7 @@ export function seedBudget(): number {
 /**
  * Stable identity for a venue, independent of the date being listed.
  *
- * Theater hrefs carry the date they were scraped for
+ * Historical datasets and links from Fandango carry the date they were scraped for
  * (`/amc-boerne-11-aaxyz/theater-page?date=2026-08-16`), so using the raw href
  * as an identity makes every venue-day a different venue. That is what let one
  * theater carry several distances at once: the same cinema measured 26.63 mi on
@@ -63,7 +63,11 @@ export function seedBudget(): number {
  * part of a run and dropped the rest, which read as a one-day engagement.
  */
 export function venueKey(href: string): string {
-  return href.split('?')[0] ?? href;
+  try {
+    return new URL(href, 'https://www.fandango.com').pathname.replace(/\/$/, '');
+  } catch {
+    return (href.split(/[?#]/)[0] ?? href).replace(/\/$/, '');
+  }
 }
 
 /**

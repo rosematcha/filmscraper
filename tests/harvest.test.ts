@@ -3,6 +3,7 @@ import {
   clampConcurrency,
   decideNextPage,
   MAX_CONCURRENCY,
+  theaterPageUrl,
 } from '../src/sources/fandango/harvest.js';
 
 describe('decideNextPage', () => {
@@ -49,5 +50,18 @@ describe('clampConcurrency', () => {
 
   it('rounds fractional requests down', () => {
     expect(clampConcurrency(2.9)).toBe(2);
+  });
+});
+
+describe('theaterPageUrl', () => {
+  it('builds a dated direct search from either a path or full URL', () => {
+    const expected = 'https://www.fandango.com/amc-rivercenter-aaxyz/theater-page?date=2026-08-12';
+    expect(theaterPageUrl('/amc-rivercenter-aaxyz/theater-page', '2026-08-12')).toBe(expected);
+    expect(
+      theaterPageUrl(
+        'https://www.fandango.com/amc-rivercenter-aaxyz/theater-page?date=old',
+        '2026-08-12',
+      ),
+    ).toBe(expected);
   });
 });

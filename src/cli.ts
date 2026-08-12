@@ -5,6 +5,7 @@ import { chainIds, resolveChain } from './core/chains.js';
 import { loadAliases } from './core/config.js';
 import { paddedRadius } from './core/filters.js';
 import { renderMarkdown, renderWarnings } from './core/markdown.js';
+import { dateRange } from './core/notes.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
 import {
   DEFAULT_TABLE_IDS,
@@ -17,6 +18,7 @@ import type { ProgressUpdate, RenderOptions, ScrapeRequest } from './core/types.
 import { BrowserSession, DEFAULT_BROWSER_OPTIONS } from './net/browser.js';
 import { geocodeAddress, zipCentroid } from './net/geocode.js';
 import { buildSources, DEFAULT_SOURCE_IDS, needsBrowser, SOURCES } from './sources/registry.js';
+import { venueKey } from './sources/fandango/seeds.js';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -60,6 +62,11 @@ interface CliOptions {
   excludeForeign: boolean;
   excludeChains: string[];
   anchor?: string;
+  theater: string[];
+}
+
+function append(value: string, previous: string[]): string[] {
+  return [...previous, value];
 }
 
 const program = new Command()
@@ -83,6 +90,12 @@ const program = new Command()
         .map((v) => v.trim())
         .filter(Boolean),
     [...DEFAULT_SOURCE_IDS],
+  )
+  .option(
+    '--theater <page>',
+    'scrape one Fandango theater-page URL or path; repeat for more theaters',
+    append,
+    [],
   )
   .option(
     '-c, --concurrency <n>',
@@ -180,6 +193,15 @@ if (unknown.length > 0) {
   console.error(`unknown source(s): ${unknown.join(', ')}`);
   process.exit(1);
 }
+const theaterPages = [...new Set(options.theater.map(venueKey))];
+if (theaterPages.some((page) => !page.endsWith('/theater-page'))) {
+  console.error('--theater expects a Fandango theater-page URL or path');
+  process.exit(1);
+}
+if (theaterPages.length > 0 && !options.sources.includes('fandango')) {
+  console.error('--theater requires fandango in --sources');
+  process.exit(1);
+}
 
 const session = new BrowserSession({
   ...DEFAULT_BROWSER_OPTIONS,
@@ -210,7 +232,16 @@ try {
   );
 
   const result = await runPipeline(
-    buildSources(options.sources, session, options.concurrency),
+    buildSources(options.sources, session, options.concurrency, {
+      ...(theaterPages.length === 0
+        ? {}
+        : {
+            targets: theaterPages.map((href) => ({
+              theater: { name: href, href, miles: 0 },
+              dates: dateRange(from, to),
+            })),
+          }),
+    }),
     request,
     {
       aliases,

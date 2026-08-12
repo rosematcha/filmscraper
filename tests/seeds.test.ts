@@ -57,6 +57,14 @@ describe('venueKey', () => {
     expect(venueKey('/amc-boerne-11-aaxyz/theater-page')).toBe('/amc-boerne-11-aaxyz/theater-page');
   });
 
+  it('keys absolute and dated URLs to the same theater page', () => {
+    expect(
+      venueKey(
+        'https://www.fandango.com/amc-boerne-11-aaxyz/theater-page/?date=2026-08-16#showtimes',
+      ),
+    ).toBe('/amc-boerne-11-aaxyz/theater-page');
+  });
+
   it('separates genuinely different venues', () => {
     expect(venueKey('/a-aaxyz/theater-page?date=2026-08-16')).not.toBe(
       venueKey('/b-aaxyz/theater-page?date=2026-08-16'),

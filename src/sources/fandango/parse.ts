@@ -1,5 +1,14 @@
 import { parseHTML } from 'linkedom';
-import type { Amenity, IsoDate, MovieListing, Showtime, ShowtimeGroup, VenueDay } from '../../core/types.js';
+import type {
+  Amenity,
+  IsoDate,
+  MovieListing,
+  Showtime,
+  ShowtimeGroup,
+  Theater,
+  VenueDay,
+} from '../../core/types.js';
+import { venueKey } from './seeds.js';
 
 /**
  * The slice of the DOM this parser touches.
@@ -38,11 +47,34 @@ const SEL = {
   theaterLink: '.shared-theater-header__name-link',
   theaterDistance: '.shared-theater-header__distance',
   theaterAddress: '.shared-theater-header__address',
+  theaterPageName: '.theater-details-header__heading',
+  theaterPageAddress: '.theater-details-header__addy',
   movieBlock: '.shared-movie-showtimes',
   movieTitle: '[class*="movie-title"]',
   movieLink: 'a[href*="/movie-overview"]',
   amenityGroup: '.js-amenity-btn[data-amenity-group]',
 } as const;
+
+function parseMovies(container: DomElement | DomDocument): MovieListing[] {
+  const movies: MovieListing[] = [];
+  for (const block of container.querySelectorAll(SEL.movieBlock)) {
+    const movieHref = block.querySelector(SEL.movieLink)?.getAttribute('href') ?? null;
+    const title =
+      text(block.querySelector(SEL.movieTitle)) || text(block.querySelector(SEL.movieLink));
+    if (!movieHref || !title) continue;
+
+    const groups: ShowtimeGroup[] = [];
+    for (const button of block.querySelectorAll(SEL.amenityGroup)) {
+      const attr = button.getAttribute('data-amenity-group');
+      if (!attr) continue;
+      const group = parseAmenityGroup(attr);
+      if (group) groups.push(group);
+    }
+    if (groups.length === 0) continue;
+    movies.push({ title, href: movieHref, groups });
+  }
+  return movies;
+}
 
 function text(node: DomElement | null | undefined): string {
   return (node?.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -103,36 +135,49 @@ export function parseAmenityGroup(json: string): ShowtimeGroup | null {
  * The page must already be hydrated and fully scrolled; this function is pure
  * and does no waiting of its own.
  */
-export function parseShowtimesPage(html: string, date: IsoDate): VenueDay[] {
+export function parseShowtimesPage(
+  html: string,
+  date: IsoDate,
+  fallbackTheater?: Theater,
+): VenueDay[] {
   const document = documentFrom(html);
   const days: VenueDay[] = [];
 
   for (const row of document.querySelectorAll(SEL.theaterRow)) {
     const link = row.querySelector(SEL.theaterLink);
-    const name = text(link);
-    const href = link?.getAttribute('href') ?? null;
-    const miles = parseMiles(text(row.querySelector(SEL.theaterDistance)));
+    const name = text(link) || fallbackTheater?.name;
+    const rawHref = link?.getAttribute('href') ?? fallbackTheater?.href;
+    const href = rawHref ? venueKey(rawHref) : undefined;
+    const miles =
+      parseMiles(text(row.querySelector(SEL.theaterDistance))) ?? fallbackTheater?.miles ?? null;
     if (!name || !href || miles === null) continue;
     const address = text(row.querySelector(SEL.theaterAddress));
 
-    const movies: MovieListing[] = [];
-    for (const block of row.querySelectorAll(SEL.movieBlock)) {
-      const movieHref = block.querySelector(SEL.movieLink)?.getAttribute('href') ?? null;
-      const title = text(block.querySelector(SEL.movieTitle)) || text(block.querySelector(SEL.movieLink));
-      if (!movieHref || !title) continue;
+    days.push({
+      theater: { name, href, miles, ...(address ? { address } : {}) },
+      date,
+      movies: parseMovies(row),
+    });
+  }
 
-      const groups: ShowtimeGroup[] = [];
-      for (const button of block.querySelectorAll(SEL.amenityGroup)) {
-        const attr = button.getAttribute('data-amenity-group');
-        if (!attr) continue;
-        const group = parseAmenityGroup(attr);
-        if (group) groups.push(group);
-      }
-      if (groups.length === 0) continue;
-      movies.push({ title, href: movieHref, groups });
-    }
-
-    days.push({ theater: { name, href, miles, ...(address ? { address } : {}) }, date, movies });
+  // A direct theater page has the same movie blocks but no surrounding search
+  // result row. The requested theater supplies its stable href and distance.
+  if (days.length === 0 && fallbackTheater) {
+    const name = text(document.querySelector(SEL.theaterPageName));
+    // A challenge/error document has neither a result row nor the venue header.
+    // Do not turn that into an authoritative empty schedule.
+    if (!name) return days;
+    const address = text(document.querySelector(SEL.theaterPageAddress));
+    days.push({
+      theater: {
+        ...fallbackTheater,
+        name,
+        href: venueKey(fallbackTheater.href),
+        ...(address ? { address } : {}),
+      },
+      date,
+      movies: parseMovies(document),
+    });
   }
 
   return days;
