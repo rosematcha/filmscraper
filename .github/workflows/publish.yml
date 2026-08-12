@@ -2,10 +2,17 @@ name: Publish listings
 
 on:
   schedule:
-    # Every slot fires; src/core/schedule.ts decides which sources are actually
-    # due, so a 06:00 Tuesday run does nothing and exits. 18:00 UTC is 1pm in
-    # San Antonio during CDT and noon once CST starts in November.
-    - cron: '0 0,6,12,18 * * *'
+    # These must stay in step with SCHEDULES in src/core/schedule.ts, which
+    # decides which sources a given slot actually scrapes; tests/schedule.test.ts
+    # parses the lines below and fails if the two drift apart.
+    #
+    # The shared evening slot: every calendar source, plus Fandango's Monday and
+    # Thursday runs.
+    - cron: '0 18 * * 0,1,4'
+    # Fandango's hourly watch, Tuesday noon to Wednesday noon CDT (UTC-5), dark
+    # from 10pm to 4am local.
+    - cron: '0 17-23 * * 2'
+    - cron: '0 0-2,9-17 * * 3'
   workflow_dispatch:
     inputs:
       radius:

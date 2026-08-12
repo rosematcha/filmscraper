@@ -6,32 +6,43 @@
  * changes about once a week. Scraping them all on the same cadence either
  * hammers the calendars for nothing or lets the multiplex data go stale.
  *
- * All times are UTC, matching GitHub's cron. 18:00 UTC is 1pm in San Antonio
- * during CDT and noon once CST begins.
+ * All times are UTC, matching GitHub's cron. San Antonio is UTC-5 on CDT, so
+ * 17:00 UTC is local noon for the months this schedule was tuned for; 18:00
+ * UTC is the long-standing evening slot every calendar source shares.
  */
 
 export interface ScheduleRule {
-  /** UTC days of the week, 0 = Sunday. Empty means every day. */
+  /** UTC days of the week, 0 = Sunday. */
   readonly days: readonly number[];
   /** UTC hours of the day. */
   readonly hours: readonly number[];
 }
 
-export const EVERY_DAY: readonly number[] = [];
-
-/** The hours a scheduled run can start; the workflow's cron must match. */
-export const RUN_HOURS: readonly number[] = [0, 6, 12, 18];
-
 export const SUNDAY = 0;
 export const MONDAY = 1;
+export const TUESDAY = 2;
+export const WEDNESDAY = 3;
 export const THURSDAY = 4;
 
+/** Inclusive run of hours, so the windows below read as the clock does. */
+function hours(from: number, to: number): number[] {
+  return Array.from({ length: to - from + 1 }, (_, i) => from + i);
+}
+
 export const SCHEDULES: Readonly<Record<string, readonly ScheduleRule[]>> = {
-  // Four times a day on Monday and Thursday, when the new week's grids and the
-  // weekend's go up; once a day otherwise.
+  // Once each on Monday and Thursday, when the new week's grids and the
+  // weekend's go up, plus an hourly watch from Tuesday noon to Wednesday noon
+  // local — the stretch where showtimes churn and screenings sell out. The
+  // overnight hours are skipped: nothing moves between 10pm and 4am.
+  //
+  //   Tue 17:00–23:00 UTC = Tue noon–6pm CDT
+  //   Wed 00:00–02:00 UTC = Tue 7pm–9pm CDT
+  //   (Tue 10pm – Wed 4am CDT is dark)
+  //   Wed 09:00–17:00 UTC = Wed 4am–noon CDT
   fandango: [
-    { days: EVERY_DAY, hours: [18] },
-    { days: [MONDAY, THURSDAY], hours: [0, 6, 12] },
+    { days: [MONDAY, THURSDAY], hours: [18] },
+    { days: [TUESDAY], hours: hours(17, 23) },
+    { days: [WEDNESDAY], hours: [...hours(0, 2), ...hours(9, 17)] },
   ],
   // Wix calendars are published in batches and rarely change mid-week.
   'slab-arthouse': [{ days: [SUNDAY], hours: [18] }],
@@ -50,8 +61,26 @@ export const SCHEDULES: Readonly<Record<string, readonly ScheduleRule[]>> = {
 };
 
 function matches(rule: ScheduleRule, day: number, hour: number): boolean {
-  const dayOk = rule.days.length === 0 || rule.days.includes(day);
-  return dayOk && rule.hours.includes(hour);
+  return rule.days.includes(day) && rule.hours.includes(hour);
+}
+
+/**
+ * Every UTC slot some source is due, as `day:hour`.
+ *
+ * The workflow's cron has to cover exactly this set: a slot missing from cron
+ * never runs, and a cron slot missing here wakes a runner that exits doing
+ * nothing. The parity test compares the two.
+ */
+export function runSlots(): Set<string> {
+  const slots = new Set<string>();
+  for (const rules of Object.values(SCHEDULES)) {
+    for (const rule of rules) {
+      for (const day of rule.days) {
+        for (const hour of rule.hours) slots.add(`${String(day)}:${String(hour)}`);
+      }
+    }
+  }
+  return slots;
 }
 
 /**
@@ -80,7 +109,7 @@ export function describeSchedule(sourceId: string): string {
   if (!rules || rules.length === 0) return 'on demand';
   const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const parts = rules.map((rule) => {
-    const when = rule.days.length === 0 ? 'daily' : rule.days.map((d) => names[d] ?? '').join(' and ');
+    const when = rule.days.map((d) => names[d] ?? '').join(' and ');
     const times = rule.hours.length === 1 ? 'once' : `${String(rule.hours.length)}×`;
     return `${times} ${when}`;
   });

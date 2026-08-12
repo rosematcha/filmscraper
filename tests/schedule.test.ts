@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mergeDataset, DATASET_VERSION, type Dataset } from '../src/core/dataset.js';
-import { allSources, describeSchedule, dueSources, RUN_HOURS } from '../src/core/schedule.js';
+import { allSources, describeSchedule, dueSources, runSlots } from '../src/core/schedule.js';
 import type { VenueDay } from '../src/core/types.js';
 
 /** A UTC instant on a given weekday, 0 = Sunday. */
@@ -10,18 +11,46 @@ const at = (day: number, hour: number): Date => {
   return new Date(base);
 };
 
+/** Every hour of a UTC day, for exhaustive "must not run" sweeps. */
+const ALL_HOURS = Array.from({ length: 24 }, (_, h) => h);
+
 describe('dueSources', () => {
-  it('runs Fandango four times on Monday and Thursday', () => {
-    for (const hour of RUN_HOURS) {
-      expect(dueSources(at(1, hour)), `Mon ${String(hour)}`).toContain('fandango');
-      expect(dueSources(at(4, hour)), `Thu ${String(hour)}`).toContain('fandango');
+  it('runs Fandango once on Monday and once on Thursday', () => {
+    for (const day of [1, 4]) {
+      expect(dueSources(at(day, 18)), `day ${String(day)} 18:00`).toContain('fandango');
+      for (const hour of ALL_HOURS.filter((h) => h !== 18)) {
+        expect(dueSources(at(day, hour)), `day ${String(day)} ${String(hour)}:00`).not.toContain(
+          'fandango',
+        );
+      }
     }
   });
 
-  it('runs Fandango once on every other day', () => {
-    for (const day of [0, 2, 3, 5, 6]) {
-      expect(dueSources(at(day, 18)), `day ${String(day)} 18:00`).toContain('fandango');
-      for (const hour of [0, 6, 12]) {
+  it('watches Fandango hourly from Tuesday noon to Wednesday noon', () => {
+    // 17:00 UTC is noon CDT. Nineteen slots: 25 hours less the six dark ones.
+    const window = [
+      ...[17, 18, 19, 20, 21, 22, 23].map((h) => [2, h] as const),
+      ...[0, 1, 2, 9, 10, 11, 12, 13, 14, 15, 16, 17].map((h) => [3, h] as const),
+    ];
+    expect(window).toHaveLength(19);
+    for (const [day, hour] of window) {
+      expect(dueSources(at(day, hour)), `day ${String(day)} ${String(hour)}:00`).toContain(
+        'fandango',
+      );
+    }
+  });
+
+  it('goes dark from 10pm Tuesday to 4am Wednesday', () => {
+    // Wed 03:00–08:00 UTC is Tue 10pm – Wed 3am CDT; the 4am slot resumes at 09:00.
+    for (const hour of [3, 4, 5, 6, 7, 8]) {
+      expect(dueSources(at(3, hour)), `Wed ${String(hour)}:00`).toEqual([]);
+    }
+    expect(dueSources(at(3, 9))).toContain('fandango');
+  });
+
+  it('leaves Fandango alone for the rest of the week', () => {
+    for (const day of [0, 5, 6]) {
+      for (const hour of ALL_HOURS) {
         expect(dueSources(at(day, hour)), `day ${String(day)} ${String(hour)}:00`).not.toContain(
           'fandango',
         );
@@ -63,15 +92,48 @@ describe('dueSources', () => {
     expect(dueSources(at(4, 17))).toEqual([]);
   });
 
-  it('covers everything on a Sunday evening', () => {
-    // The one slot where every source lines up.
-    expect(dueSources(at(0, 18)).sort()).toEqual(allSources());
+  it('covers every calendar source on a Sunday evening', () => {
+    // The one slot where the venue calendars line up. Fandango sits it out; its
+    // week starts Monday evening.
+    const expected = allSources().filter((id) => id !== 'fandango');
+    expect(dueSources(at(0, 18)).sort()).toEqual(expected);
   });
 
   it('describes each cadence in plain words', () => {
-    expect(describeSchedule('fandango')).toMatch(/daily/);
+    expect(describeSchedule('fandango')).toMatch(/Monday and Thursday/);
     expect(describeSchedule('slab-arthouse')).toMatch(/Sunday/);
     expect(describeSchedule('unknown-source')).toBe('on demand');
+  });
+});
+
+describe('workflow cron', () => {
+  /** Expand a `0 <hours> * * <days>` field list, e.g. `0-2,9-17`. */
+  const expand = (field: string): number[] =>
+    field.split(',').flatMap((part) => {
+      const [from, to] = part.split('-').map(Number);
+      if (from === undefined || Number.isNaN(from)) throw new Error(`bad cron field: ${field}`);
+      const end = to ?? from;
+      return Array.from({ length: end - from + 1 }, (_, i) => from + i);
+    });
+
+  it('fires at exactly the slots some source is due', () => {
+    const yaml = readFileSync(new URL('../.github/workflows/publish.yml', import.meta.url), 'utf8');
+    const crons = [...yaml.matchAll(/^\s*- cron: '([^']+)'/gm)].map((m) => m[1] ?? '');
+    expect(crons.length).toBeGreaterThan(0);
+
+    const fired = new Set<string>();
+    for (const cron of crons) {
+      const [minute, hourField, , , dayField] = cron.split(' ');
+      // A non-zero minute would drift the run out of its scheduled hour.
+      expect(minute, cron).toBe('0');
+      for (const day of expand(dayField ?? '')) {
+        for (const hour of expand(hourField ?? '')) fired.add(`${String(day)}:${String(hour)}`);
+      }
+    }
+
+    // Set equality both ways: a missing cron slot silently never runs, and an
+    // extra one boots a runner that scrapes nothing.
+    expect([...fired].sort()).toEqual([...runSlots()].sort());
   });
 });
 
