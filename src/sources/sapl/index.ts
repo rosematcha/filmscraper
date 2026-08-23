@@ -170,7 +170,7 @@ export class SaplSource implements Source {
     return {
       days: await toVenueDays(screenings, request.zip, this.id),
       warnings,
-      complete: !perDay.some(({ failure }) => failure !== null),
+      failedDates: perDay.filter(({ failure }) => failure !== null).map(({ date }) => date),
     };
   }
 }

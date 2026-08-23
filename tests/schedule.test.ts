@@ -253,6 +253,32 @@ describe('mergeDataset', () => {
     expect(merged.horizon).toBe('2026-08-08');
   });
 
+  it('replaces successful dates while retaining only failed dates', () => {
+    const priorStamp = {
+      updatedAt: '2026-08-02T18:00:00.000Z',
+      from: '2026-08-02',
+      to: '2026-09-01',
+    };
+    const previous = base({
+      days: [day('sapl', '2026-08-04'), day('sapl', '2026-08-05')],
+      sources: { sapl: priorStamp },
+    });
+    const partial = {
+      ...fresh,
+      sourceIds: ['sapl'],
+      days: [day('sapl', '2026-08-05'), day('sapl', '2026-08-06')],
+      failedSourceDates: { sapl: ['2026-08-04'] },
+    };
+
+    const merged = mergeDataset(previous, partial, now);
+    expect(merged.days.filter((d) => d.sourceId === 'sapl').map((d) => d.date)).toEqual([
+      '2026-08-04',
+      '2026-08-05',
+      '2026-08-06',
+    ]);
+    expect(merged.sources['sapl']).toEqual(priorStamp);
+  });
+
   it('preserves earlier stamps across runs', () => {
     const withStamp = base({
       sources: {

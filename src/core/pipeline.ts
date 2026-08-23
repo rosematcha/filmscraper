@@ -398,6 +398,7 @@ export async function runPipeline(
           }),
           sourceId: source.id,
           complete: false,
+          failedDates: [] as readonly IsoDate[],
         }));
     }),
   );
@@ -444,10 +445,16 @@ export async function runPipeline(
     .filter(
       (result) =>
         result.complete === false ||
-        (result.days.length === 0 &&
+        ((result.failedDates?.length ?? 0) === 0 &&
+          result.days.length === 0 &&
           result.warnings.some((warning) => warning.kind === 'page-error')),
     )
     .map((result) => result.sourceId);
+  const failedSourceDates = Object.fromEntries(
+    results
+      .filter((result) => (result.failedDates?.length ?? 0) > 0)
+      .map((result) => [result.sourceId, result.failedDates ?? []]),
+  );
 
   return {
     request,
@@ -459,5 +466,6 @@ export async function runPipeline(
     warnings,
     days: inRange,
     failedSourceIds,
+    ...(Object.keys(failedSourceDates).length > 0 ? { failedSourceDates } : {}),
   };
 }

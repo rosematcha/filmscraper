@@ -79,6 +79,8 @@ describe('Slab title extraction', () => {
   it('does not mistake an event-like film title for a non-film programme', () => {
     expect(filmFromSlabTitle('10/10: Celebration (1998)')).toBe('Celebration (1998)');
     expect(filmFromSlabTitle('10/11: The Festival (2018)')).toBe('The Festival (2018)');
+    expect(filmFromSlabTitle('10/12: The Workshop (2017)')).toBe('The Workshop (2017)');
+    expect(filmFromSlabTitle('10/13: The Concert (2009)')).toBe('The Concert (2009)');
   });
 });
 
@@ -412,6 +414,16 @@ describe('Drive-in calendar feed', () => {
     const init = fetchMock.mock.calls[0]?.[1] as { headers: Record<string, string> };
     expect(init.headers['User-Agent']).toMatch(/Chrome\//);
     expect(init.headers['Accept']).toContain('text/calendar');
+  });
+
+  it('does not treat an empty or challenge feed as authoritative', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>challenge</html>')));
+
+    const result = await new DriveInSource().harvest(request);
+
+    expect(result.days).toEqual([]);
+    expect(result.complete).toBe(false);
+    expect(result.warnings[0]?.message).toContain('no readable events');
   });
 
   it('reports the status code when the feed is blocked', async () => {

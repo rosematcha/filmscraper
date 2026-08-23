@@ -90,8 +90,22 @@ export class DriveInSource implements Source {
       };
     }
 
+    const events = parseIcal(text);
+    if (events.length === 0) {
+      return {
+        days: [],
+        complete: false,
+        warnings: [
+          {
+            kind: 'page-error',
+            message: `${this.venue.name} calendar feed contained no readable events.`,
+          },
+        ],
+      };
+    }
+
     const screenings: SimpleScreening[] = [];
-    for (const event of parseIcal(text)) {
+    for (const event of events) {
       const date = icalDate(event.start, event.timeZone ?? this.venue.timeZone);
       if (!date || date < first || date > last) continue;
       const time = icalTime(event.start, event.timeZone ?? this.venue.timeZone);

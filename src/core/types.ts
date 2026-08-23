@@ -227,6 +227,8 @@ export interface ScrapeResult {
   readonly warnings: readonly ScrapeWarning[];
   /** Sources that returned a page error and must not replace last-known-good data. */
   readonly failedSourceIds?: readonly string[];
+  /** Per-source dates that failed while the rest of that source completed. */
+  readonly failedSourceDates?: Readonly<Record<string, readonly IsoDate[]>>;
   /** The raw venue-days behind `movies`, for publishing a reusable dataset. */
   readonly days: readonly VenueDay[];
 }

@@ -86,6 +86,7 @@ export function mergeDataset(
     readonly warnings: readonly ScrapeWarning[];
     readonly sourceIds: readonly string[];
     readonly failedSourceIds?: readonly string[];
+    readonly failedSourceDates?: Readonly<Record<string, readonly IsoDate[]>>;
     readonly from: IsoDate;
     readonly to: IsoDate;
     readonly zip: string;
@@ -96,8 +97,16 @@ export function mergeDataset(
   now: Date,
 ): Dataset {
   const failed = new Set(fresh.failedSourceIds ?? []);
+  const failedDates = new Map(
+    Object.entries(fresh.failedSourceDates ?? {}).map(([sourceId, dates]) => [
+      sourceId,
+      new Set(dates),
+    ]),
+  );
   const scraped = new Set(fresh.sourceIds.filter((id) => !failed.has(id)));
   const sourceOf = (day: VenueDay): string => day.sourceId ?? 'fandango';
+  const failedOn = (day: VenueDay): boolean =>
+    failedDates.get(sourceOf(day))?.has(day.date) === true;
 
   // A previous run at a different ZIP or a narrower radius cannot be trusted
   // to line up with this one, so start clean rather than blend the two.
@@ -109,13 +118,14 @@ export function mergeDataset(
 
   const carried = compatible
     ? previous.days.filter(
-        (d) => !scraped.has(sourceOf(d)) && d.date >= fresh.from && d.date <= fresh.to,
+        (d) =>
+          (!scraped.has(sourceOf(d)) || failedOn(d)) && d.date >= fresh.from && d.date <= fresh.to,
       )
     : [];
   // A failed source is not authoritative emptiness. Keep its old rows when we
   // have them; on a first run, retain whatever partial rows it did return.
   const freshDays = compatible
-    ? fresh.days.filter((day) => !failed.has(sourceOf(day)))
+    ? fresh.days.filter((day) => !failed.has(sourceOf(day)) && !failedOn(day))
     : fresh.days;
 
   // The posting boundary is measured on Fandango and nothing else, so a run
@@ -138,7 +148,9 @@ export function mergeDataset(
 
   const stamps: Record<string, SourceStamp> = compatible ? { ...previous.sources } : {};
   const stamp: SourceStamp = { updatedAt: now.toISOString(), from: fresh.from, to: fresh.to };
-  for (const id of scraped) stamps[id] = stamp;
+  for (const id of scraped) {
+    if (!failedDates.has(id)) stamps[id] = stamp;
+  }
 
   // Page errors describe one attempt and must clear after a later successful
   // run. The radius warning describes the carried Fandango rows themselves,

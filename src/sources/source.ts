@@ -15,6 +15,8 @@ export interface SourceResult {
   readonly warnings: ScrapeWarning[];
   /** False when the rows are partial and must not replace last-known-good data. */
   readonly complete?: boolean;
+  /** Dates whose previous rows must be retained while successful dates refresh. */
+  readonly failedDates?: readonly IsoDate[];
 }
 
 /**

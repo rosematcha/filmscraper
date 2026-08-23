@@ -237,6 +237,7 @@ try {
       warnings: result.warnings,
       sourceIds,
       ...(result.failedSourceIds ? { failedSourceIds: result.failedSourceIds } : {}),
+      ...(result.failedSourceDates ? { failedSourceDates: result.failedSourceDates } : {}),
       from,
       to,
       zip: options.zip,
