@@ -10,7 +10,7 @@
   # A git push must not clobber the nightly data with an empty build, so the
   # current dataset is pulled from the live site first. Missing data is not an
   # error: the site says so plainly and the next scheduled scrape fills it in.
-  command = "pnpm install --frozen-lockfile && mkdir -p web/public/data && dataset_tmp=$(mktemp) && if curl -sfS --max-time 30 \"$URL/data/latest.json\" -o \"$dataset_tmp\" && node -e \"const d=JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')); if(d.version!==2 || !Array.isArray(d.days) || typeof d.generatedAt!=='string') process.exit(1)\" \"$dataset_tmp\"; then mv \"$dataset_tmp\" web/public/data/latest.json; for export_name in full truncated; do export_tmp=$(mktemp); if curl -sfS --max-time 30 \"$URL/data/$export_name.json\" -o \"$export_tmp\" && node -e \"const d=JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')); if(d.version!==1 || d.mode!==process.argv[2] || !Array.isArray(d.theaters) || !Array.isArray(d.films)) process.exit(1)\" \"$export_tmp\" \"$export_name\"; then mv \"$export_tmp\" \"web/public/data/$export_name.json\"; else rm -f \"$export_tmp\"; echo \"no valid published $export_name export available\"; fi; done; else rm -f \"$dataset_tmp\"; echo 'no valid published dataset available'; fi && pnpm --filter filmscraper-web build"
+  command = "pnpm install --frozen-lockfile && pnpm exec tsx src/restoreData.ts \"$URL\" web/public/data && pnpm --filter filmscraper-web build"
   publish = "web/dist"
 
 [build.environment]
