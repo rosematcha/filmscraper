@@ -148,7 +148,7 @@ describe('exportPublicDataset', () => {
     expect(exported.films[0]?.showings[0]?.time).toBeNull();
     expect(exported.films[0]?.showings[0]?.source).toBe('sapl');
     expect(exported.theaters[0]?.href).toBeUndefined();
-    expect(exported.theaters[0]?.source).toBe('sapl');
+    expect(exported.theaters[0]?.sources).toEqual(['sapl']);
   });
 
   it('orders same-day showings chronologically', () => {
@@ -228,6 +228,91 @@ describe('exportPublicDataset', () => {
     expect(exported.films).toHaveLength(1);
     expect(exported.films[0]?.title).toBe('Spider-Man: Brand New Day (2026)');
     expect(exported.films[0]?.showings).toHaveLength(3);
+  });
+
+  it('keeps same-time presentation variants distinct', () => {
+    const exported = exportPublicDataset(
+      datasetFor([
+        {
+          theater: { name: 'Test Cinema', href: '/test/theater-page', miles: 1 },
+          date: '2026-08-04',
+          movies: [
+            {
+              title: 'Fixture Film',
+              href: '/fixture-film-123/movie-overview',
+              groups: [
+                {
+                  amenities: [{ id: 1027, name: 'D-Box' }],
+                  isDolby: false,
+                  variantId: 123,
+                  showtimes: [{ time: '7:00p', expired: false }],
+                },
+                {
+                  amenities: [{ id: 2011, name: 'Reserved seating' }],
+                  isDolby: false,
+                  variantId: 123,
+                  showtimes: [{ time: '7:00p', expired: false }],
+                },
+                {
+                  amenities: [{ id: 1009, name: 'RealD 3D' }],
+                  isDolby: false,
+                  variantId: 456,
+                  showtimes: [{ time: '7:00p', expired: false }],
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+      { mode: 'full', aliases: EMPTY_ALIASES, timezone: TIMEZONE },
+    );
+
+    expect(exported.films[0]?.showings).toHaveLength(3);
+    expect(exported.films[0]?.showings.map((showing) => showing.amenities)).toEqual([
+      ['D-Box'],
+      ['Reserved seating'],
+      ['RealD 3D'],
+    ]);
+  });
+
+  it('unifies physical venues and prefers their official event source', () => {
+    const screening = (sourceId: string, href: string, time: string): VenueDay => ({
+      theater: { name: 'Mission Marquee Plaza', href: '', miles: 3 },
+      date: '2026-09-05',
+      sourceId,
+      movies: [
+        {
+          title: 'The Lego Batman Movie',
+          href,
+          groups: [
+            {
+              amenities: [],
+              isDolby: false,
+              variantId: null,
+              showtimes: [{ time, expired: false }],
+            },
+          ],
+        },
+      ],
+    });
+    const official = 'https://mission.example/the-lego-batman-movie';
+    const exported = exportPublicDataset(
+      datasetFor([
+        screening('slab-outdoor', 'https://slab.example/the-lego-batman-movie', '8:00p'),
+        screening('mission-marquee', official, '7:00p'),
+      ]),
+      { mode: 'full', aliases: EMPTY_ALIASES, timezone: TIMEZONE },
+    );
+
+    expect(exported.theaters).toHaveLength(1);
+    expect(exported.theaters[0]?.sources).toEqual(['mission-marquee', 'slab-outdoor']);
+    expect(exported.films).toHaveLength(1);
+    expect(exported.films[0]?.href).toBe(official);
+    expect(exported.films[0]?.showings).toHaveLength(1);
+    expect(exported.films[0]?.showings[0]).toMatchObject({
+      time: '7:00p',
+      source: 'mission-marquee',
+    });
   });
 
   it('omits theaters with no retained showings', () => {

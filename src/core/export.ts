@@ -29,7 +29,7 @@ export interface PublicTheater {
   readonly distanceMiles: number;
   readonly address?: string;
   readonly location?: { lat: number; lon: number };
-  readonly source: string;
+  readonly sources: readonly string[];
 }
 
 export interface PublicShowing {
@@ -39,6 +39,8 @@ export interface PublicShowing {
   readonly time: string | null;
   readonly format?: string;
   readonly amenities?: string[];
+  /** Fandango's ticketing variant when the source publishes one. */
+  readonly variantId?: number;
   readonly admission?: Admission;
   readonly source: string;
   /** Present only in the full export. */
@@ -95,10 +97,10 @@ function absoluteHref(href: string): string {
   return `${FANDANGO}${href.startsWith('/') ? href : `/${href}`}`;
 }
 
-function theaterId(theater: Theater, sourceId: string): string {
+function theaterId(theater: Theater): string {
   const match = /^\/([^/]+)\/theater-page/.exec(pathOf(theater.href));
   if (match?.[1]) return match[1];
-  return `${sourceId}-${slugify(theater.name)}`;
+  return `venue-${slugify(theater.name)}`;
 }
 
 function filmId(href: string, title: string): string {
@@ -123,7 +125,6 @@ function amenityLabels(group: ShowtimeGroup): string[] {
   const format = groupFormat(group);
   for (const amenity of group.amenities) {
     const c = classifyAmenity(amenity);
-    if (c.cls === 'comfort' || c.cls === 'plf' || c.cls === 'three-d') continue;
     const label = c.label;
     if (label === format) continue;
     labels.push(label);
@@ -167,11 +168,44 @@ interface FilmIdentity {
   readonly releaseYear: number | null;
 }
 
+/** Venue-owned listings outrank third-party programme mirrors. */
+function sourceRank(sourceId: string): number {
+  if (sourceId === 'fandango') return 100;
+  if (sourceId.startsWith('slab-')) return 10;
+  return 50;
+}
+
+interface IdentityCandidate {
+  readonly href: string;
+  readonly title: string;
+  readonly theaters: Set<string>;
+  sourceRank: number;
+}
+
 /**
  * Apply the same title, variant, and explicit alias merging as the rendered
  * tables, including listings whose only captured showtimes have expired.
  */
 function filmIdentities(dataset: Dataset, aliases: AliasConfig): Map<string, FilmIdentity> {
+  const candidates = new Map<string, IdentityCandidate>();
+  for (const day of dataset.days) {
+    const rank = sourceRank(day.sourceId ?? 'fandango');
+    for (const movie of day.movies) {
+      const existing = candidates.get(movie.href);
+      if (existing) {
+        existing.theaters.add(day.theater.name);
+        existing.sourceRank = Math.max(existing.sourceRank, rank);
+      } else {
+        candidates.set(movie.href, {
+          href: movie.href,
+          title: movie.title,
+          theaters: new Set([day.theater.name]),
+          sourceRank: rank,
+        });
+      }
+    }
+  }
+
   const identityDays: VenueDay[] = dataset.days.map((day) => ({
     ...day,
     movies: day.movies.map((movie) => ({
@@ -187,10 +221,22 @@ function filmIdentities(dataset: Dataset, aliases: AliasConfig): Map<string, Fil
   ];
   const identities = new Map<string, FilmIdentity>();
   for (const film of aggregate(identityDays, theaterList, { aliases, keepYears: true })) {
+    const preferred = film.mergedHrefs
+      .map((href) => candidates.get(href))
+      .filter((candidate): candidate is IdentityCandidate => candidate !== undefined)
+      .sort(
+        (a, b) =>
+          b.theaters.size - a.theaters.size ||
+          b.sourceRank - a.sourceRank ||
+          a.title.length - b.title.length ||
+          a.href.localeCompare(b.href),
+      )[0];
+    const href = preferred?.href ?? film.href;
+    const title = preferred?.title ?? film.title;
     const identity = {
-      id: filmId(film.href, film.title),
-      title: film.title,
-      href: absoluteHref(film.href),
+      id: filmId(href, title),
+      title,
+      href: absoluteHref(href),
       releaseYear: film.releaseYear,
     };
     for (const href of film.mergedHrefs) identities.set(href, identity);
@@ -222,6 +268,24 @@ function showingKey(showing: PublicShowing): string {
 }
 
 /**
+ * When a venue calendar and a programme mirror list the same film/date, keep
+ * the venue-owned record. Their advertised times can differ (doors vs film),
+ * and presenting both as distinct screenings is worse than choosing the
+ * authoritative source.
+ */
+function reconcileShowings(showings: readonly PublicShowing[]): PublicShowing[] {
+  const bestBySlot = new Map<string, number>();
+  for (const showing of showings) {
+    const key = `${showing.theaterId}\0${showing.date}`;
+    bestBySlot.set(key, Math.max(bestBySlot.get(key) ?? 0, sourceRank(showing.source)));
+  }
+  return showings.filter(
+    (showing) =>
+      sourceRank(showing.source) === bestBySlot.get(`${showing.theaterId}\0${showing.date}`),
+  );
+}
+
+/**
  * Turn the internal scrape into a film-centric export other tools can read.
  *
  * `truncated` drops past dates and showtimes Fandango already marked expired;
@@ -230,13 +294,16 @@ function showingKey(showing: PublicShowing): string {
 export function exportPublicDataset(dataset: Dataset, options: ExportOptions): PublicExport {
   const scrapeDay = scrapeDayOf(dataset, options.timezone);
   const theaters = new Map<string, PublicTheater>();
+  const theaterRanks = new Map<string, number>();
   const films = new Map<string, FilmAccumulator>();
   const identities = filmIdentities(dataset, options.aliases);
 
   for (const day of dataset.days) {
     const sourceId = day.sourceId ?? 'fandango';
-    const tid = theaterId(day.theater, sourceId);
-    if (!theaters.has(tid)) {
+    const tid = theaterId(day.theater);
+    const existingTheater = theaters.get(tid);
+    const sources = [...new Set([...(existingTheater?.sources ?? []), sourceId])].sort();
+    if (!existingTheater || sourceRank(sourceId) > (theaterRanks.get(tid) ?? 0)) {
       const chain = chainOf(day.theater.name, sourceId);
       const shortName = options.aliases.theaterNames[day.theater.name];
       theaters.set(tid, {
@@ -249,8 +316,11 @@ export function exportPublicDataset(dataset: Dataset, options: ExportOptions): P
         distanceMiles: day.theater.miles,
         ...(day.theater.address ? { address: day.theater.address } : {}),
         ...(day.theater.coords ? { location: day.theater.coords } : {}),
-        source: sourceId,
+        sources,
       });
+      theaterRanks.set(tid, sourceRank(sourceId));
+    } else {
+      theaters.set(tid, { ...existingTheater, sources });
     }
 
     for (const movie of day.movies) {
@@ -270,7 +340,9 @@ export function exportPublicDataset(dataset: Dataset, options: ExportOptions): P
       href: film.href,
       releaseYear: film.releaseYear,
       showings: [
-        ...new Map(film.showings.map((showing) => [showingKey(showing), showing])).values(),
+        ...new Map(
+          reconcileShowings(film.showings).map((showing) => [showingKey(showing), showing]),
+        ).values(),
       ].sort(compareShowings),
     }));
   const referencedTheaters = new Set(
@@ -333,6 +405,7 @@ function accumulateFilm(
         time: showtime.time || null,
         ...(format ? { format } : {}),
         ...(amenities.length > 0 ? { amenities } : {}),
+        ...(group.variantId === null ? {} : { variantId: group.variantId }),
         ...(movie.admission ? { admission: movie.admission } : {}),
         source: sourceId,
         ...(mode === 'full' ? { expired: showtime.expired } : {}),
