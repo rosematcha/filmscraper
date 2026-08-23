@@ -75,6 +75,11 @@ describe('Slab title extraction', () => {
     ).toBeNull();
     expect(filmFromSlabTitle('10/10: KLRN Kids Fall Festival, Mission Marquee Plaza')).toBeNull();
   });
+
+  it('does not mistake an event-like film title for a non-film programme', () => {
+    expect(filmFromSlabTitle('10/10: Celebration (1998)')).toBe('Celebration (1998)');
+    expect(filmFromSlabTitle('10/11: The Festival (2018)')).toBe('The Festival (2018)');
+  });
 });
 
 describe('parseSlabEvents', () => {

@@ -96,7 +96,8 @@ const TRAILING_NOISE =
   /^(outdoor\s+family\s+film|family\s+film|movie\s+night|presented\s+by\b.*|sponsored\s+by\b.*|free\s+admission|.*\bplaza\b.*|.*\bpark\b.*|.*\btheater\b.*|.*\blibrary\b.*)$/i;
 
 /** Calendar entries that use the cinema as an event venue but screen no film. */
-const NON_FILM_PROGRAMME = /\b(festival|celebration|concert|live\s+music|market|workshop)\b/i;
+const NON_FILM_PROGRAMME =
+  /\b(kids(?:\s+\w+){0,2}\s+festival|culture\s+celebration|music\s+festival|arts?\s+festival|concert|live\s+music|market|workshop)\b/i;
 
 /** A label Slab puts before the actual title on occasional partner screenings. */
 const SCREENING_PREFIX = /^(?:free\s+)?(?:film\s+)?screening\s*:\s*/i;
