@@ -35,6 +35,8 @@ export interface PublicTheater {
 export interface PublicShowing {
   readonly theaterId: string;
   readonly date: IsoDate;
+  /** This source's listing or ticket page for the showing. */
+  readonly href: string;
   /** Venue-local display time, or null when the calendar does not publish one. */
   readonly time: string | null;
   readonly format?: string;
@@ -402,6 +404,7 @@ function accumulateFilm(
       const showing: PublicShowing = {
         theaterId,
         date: day.date,
+        href: absoluteHref(movie.href),
         time: showtime.time || null,
         ...(format ? { format } : {}),
         ...(amenities.length > 0 ? { amenities } : {}),

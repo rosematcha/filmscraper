@@ -228,6 +228,9 @@ describe('exportPublicDataset', () => {
     expect(exported.films).toHaveLength(1);
     expect(exported.films[0]?.title).toBe('Spider-Man: Brand New Day (2026)');
     expect(exported.films[0]?.showings).toHaveLength(3);
+    expect(
+      exported.films[0]?.showings.find((showing) => showing.source === 'stars-and-stripes')?.href,
+    ).toBe('https://example.test/spiderman');
   });
 
   it('keeps same-time presentation variants distinct', () => {
@@ -310,6 +313,7 @@ describe('exportPublicDataset', () => {
     expect(exported.films[0]?.href).toBe(official);
     expect(exported.films[0]?.showings).toHaveLength(1);
     expect(exported.films[0]?.showings[0]).toMatchObject({
+      href: official,
       time: '7:00p',
       source: 'mission-marquee',
     });
