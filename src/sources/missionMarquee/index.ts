@@ -45,6 +45,7 @@ export class MissionMarqueeSource implements Source {
     } catch (error) {
       return {
         days: [],
+        complete: false,
         warnings: [
           {
             kind: 'page-error',
@@ -54,10 +55,24 @@ export class MissionMarqueeSource implements Source {
       };
     }
 
+    const events = parseMarqueeEvents(html);
+    if (events.length === 0) {
+      return {
+        days: [],
+        complete: false,
+        warnings: [
+          {
+            kind: 'page-error',
+            message: `${MISSION_MARQUEE.label}: the events page contained no readable events.`,
+          },
+        ],
+      };
+    }
+
     const pageAdmission = detectAdmission(textOf(html));
     const screenings: SimpleScreening[] = [];
     let skipped = 0;
-    for (const event of parseMarqueeEvents(html)) {
+    for (const event of events) {
       if (event.date < first || event.date > last) continue;
       const film = filmFromMarqueeTitle(event.title);
       if (!film) {
@@ -82,7 +97,7 @@ export class MissionMarqueeSource implements Source {
       skipped > 0
         ? [
             {
-              kind: 'page-error' as const,
+              kind: 'skipped-event' as const,
               message: `${MISSION_MARQUEE.label}: skipped ${String(skipped)} event${skipped === 1 ? '' : 's'} that named no specific film.`,
             },
           ]

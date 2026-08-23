@@ -52,6 +52,10 @@ describe('classifyAmenity', () => {
     expect(classOf(1088, 'Accessibility devices available')).toBe('access');
     expect(classOf(1004, 'Spanish subtitled')).toBe('language');
     expect(classOf(1037, 'Spanish Dubbed')).toBe('language');
+    expect(classOf(1056, 'English Subtitles')).toBe('language');
+    expect(classOf(1379, 'Telugu with English Subtitles')).toBe('language');
+    expect(labelOf(1098, 'Telugu Language')).toBe('Telugu Language');
+    expect(labelOf(99995, 'Korean Language')).toBe('Korean Language');
   });
 
   it('flags special-event programming', () => {

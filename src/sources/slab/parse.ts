@@ -95,6 +95,12 @@ const PROGRAMME_ONLY =
 const TRAILING_NOISE =
   /^(outdoor\s+family\s+film|family\s+film|movie\s+night|presented\s+by\b.*|sponsored\s+by\b.*|free\s+admission|.*\bplaza\b.*|.*\bpark\b.*|.*\btheater\b.*|.*\blibrary\b.*)$/i;
 
+/** Calendar entries that use the cinema as an event venue but screen no film. */
+const NON_FILM_PROGRAMME = /\b(festival|celebration|concert|live\s+music|market|workshop)\b/i;
+
+/** A label Slab puts before the actual title on occasional partner screenings. */
+const SCREENING_PREFIX = /^(?:free\s+)?(?:film\s+)?screening\s*:\s*/i;
+
 /**
  * Pull the film out of a Slab event title.
  *
@@ -106,8 +112,24 @@ export function filmFromSlabTitle(title: string): string | null {
   const withoutDate = title.replace(DATE_PREFIX, '').trim();
   if (!withoutDate) return null;
 
+  // The movie calendar occasionally carries use-of-space events such as a
+  // music festival. Film-related words override this guard because a film
+  // festival or a screening tied to a symposium is still wanted.
+  if (
+    NON_FILM_PROGRAMME.test(withoutDate) &&
+    !/\b(film|movie|cinema|screening)\b/i.test(withoutDate)
+  ) {
+    return null;
+  }
+
+  const withoutLabel = withoutDate.replace(SCREENING_PREFIX, '').trim();
+  // Partner events can put the programme first and the film in quotation
+  // marks: `Xicanx Symposium: “ASCO: WITHOUT PERMISSION”`.
+  const quoted = [...withoutLabel.matchAll(/[“"]([^”"]+)[”"]/g)].at(-1)?.[1];
+  const named = quoted?.trim() ?? withoutLabel;
+
   // Drop a parenthesised sponsor tail before splitting on commas.
-  const withoutSponsor = withoutDate.replace(/\s*\((?:sponsored|presented)\b[^)]*\)\s*$/i, '').trim();
+  const withoutSponsor = named.replace(/\s*\((?:sponsored|presented)\b[^)]*\)\s*$/i, '').trim();
   const [first = ''] = withoutSponsor.split(',');
   const film = first.trim();
 

@@ -12,13 +12,7 @@ import type { Amenity } from './types.js';
  * - `comfort`  — seating and venue perks. Never surfaced.
  */
 export type AmenityClass =
-  | 'format'
-  | 'plf'
-  | 'three-d'
-  | 'access'
-  | 'language'
-  | 'event'
-  | 'comfort';
+  'format' | 'plf' | 'three-d' | 'access' | 'language' | 'event' | 'comfort';
 
 interface AmenityRule {
   readonly cls: AmenityClass;
@@ -64,7 +58,16 @@ const ID_RULES: ReadonlyMap<number, AmenityRule> = new Map([
   [1102, { cls: 'access', label: 'Accessibility devices' }],
   [1004, { cls: 'language', label: 'Spanish subtitled' }],
   [1037, { cls: 'language', label: 'Spanish dubbed' }],
+  [1055, { cls: 'language', label: 'English dubbed' }],
+  [1056, { cls: 'language', label: 'English subtitles' }],
+  [1098, { cls: 'language' }], // Telugu Language
+  [1103, { cls: 'language' }], // Hindi Language
   [1128, { cls: 'language', label: 'Spanish language' }],
+  [1289, { cls: 'language' }], // Japanese Language
+  [1359, { cls: 'language' }], // Malayalam with English Subtitles
+  [1379, { cls: 'language' }], // Telugu with English Subtitles
+  [1394, { cls: 'language' }], // Tamil with English Subtitles
+  [1421, { cls: 'language' }], // Punjabi with English Subtitles
 
   // --- event markers ------------------------------------------------------
   [1182, { cls: 'event' }], // Fathom Features
@@ -107,13 +110,15 @@ const NAME_RULES: readonly (readonly [RegExp, AmenityRule])[] = [
 
   [/open\s+caption/i, { cls: 'access', label: 'Open caption' }],
   [/closed\s+caption/i, { cls: 'access', label: 'Closed caption' }],
-  [/accessibility|assisted\s+listening|descriptive\s+audio/i, {
-    cls: 'access',
-    label: 'Accessibility devices',
-  }],
-  [/dubbed/i, { cls: 'language', label: 'Dubbed' }],
-  [/subtitled/i, { cls: 'language', label: 'Subtitled' }],
-  [/spanish|language/i, { cls: 'language', label: 'Spanish language' }],
+  [
+    /accessibility|assisted\s+listening|descriptive\s+audio/i,
+    {
+      cls: 'access',
+      label: 'Accessibility devices',
+    },
+  ],
+  [/spanish/i, { cls: 'language', label: 'Spanish language' }],
+  [/\b(language|dubbed|subtitled|subtitles?)\b/i, { cls: 'language' }],
 
   [/fathom|anniversary|special\s+event|encore/i, { cls: 'event' }],
 ];

@@ -28,7 +28,7 @@ import {
   parseTobinDate,
 } from '../src/sources/tobinCenter/parse.js';
 import { RubyCitySource } from '../src/sources/rubyCity/index.js';
-import { DriveInSource } from '../src/sources/driveIn/index.js';
+import { DriveInSource, filmsFromDriveInSummary } from '../src/sources/driveIn/index.js';
 import type { SourceRequest } from '../src/sources/source.js';
 
 describe('Slab title extraction', () => {
@@ -61,6 +61,19 @@ describe('Slab title extraction', () => {
 
   it('survives a title with no date prefix', () => {
     expect(filmFromSlabTitle('Pearl (2022)')).toBe('Pearl (2022)');
+  });
+
+  it('reads a quoted film out of a partner programme title', () => {
+    expect(
+      filmFromSlabTitle('8/23: Free Screening: Xicanx Symposium: “ASCO: WITHOUT PERMISSION”'),
+    ).toBe('ASCO: WITHOUT PERMISSION');
+  });
+
+  it('skips non-film events carried on the movie calendar', () => {
+    expect(
+      filmFromSlabTitle('8/29: Roots & Riddims: Chicano Arts & Accordion Culture Celebration'),
+    ).toBeNull();
+    expect(filmFromSlabTitle('10/10: KLRN Kids Fall Festival, Mission Marquee Plaza')).toBeNull();
   });
 });
 
@@ -245,6 +258,12 @@ describe('SAPL film extraction', () => {
     expect(event({ title: 'Gen X Nostalgia Night: Nightmare on Elm Street' })).toBe(
       'Nightmare on Elm Street',
     );
+    expect(
+      event({
+        title: 'Watch & Make - Monsters, Inc.',
+        description: 'We will be showing the movie and making a craft afterward.',
+      }),
+    ).toBe('Monsters, Inc');
   });
 
   it('skips cancelled screenings', () => {
@@ -369,6 +388,14 @@ describe('Drive-in calendar feed', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('keeps known halves of double features and drops placeholders', () => {
+    expect(filmsFromDriveInSummary('COYOTE VS. ACME + TBD')).toEqual(['Coyote Vs. Acme']);
+    expect(filmsFromDriveInSummary('THE SANDLOT + THE GOONIES')).toEqual([
+      'The Sandlot',
+      'The Goonies',
+    ]);
   });
 
   it('identifies itself as a browser, since the feed is behind a bot filter', async () => {

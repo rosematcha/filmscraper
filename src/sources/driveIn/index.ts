@@ -35,6 +35,14 @@ function tidyTitle(summary: string): string {
     );
 }
 
+/** Known films in a double-feature summary; unannounced halves are omitted. */
+export function filmsFromDriveInSummary(summary: string): string[] {
+  return summary
+    .split(/\s+\+\s+/)
+    .map(tidyTitle)
+    .filter((title) => title !== '' && !/^(tbd|tba|to be announced)$/i.test(title));
+}
+
 /**
  * Stars & Stripes, read from its iCal feed.
  *
@@ -72,6 +80,7 @@ export class DriveInSource implements Source {
     } catch (error) {
       return {
         days: [],
+        complete: false,
         warnings: [
           {
             kind: 'page-error',
@@ -85,18 +94,18 @@ export class DriveInSource implements Source {
     for (const event of parseIcal(text)) {
       const date = icalDate(event.start, event.timeZone ?? this.venue.timeZone);
       if (!date || date < first || date > last) continue;
-      const film = tidyTitle(event.summary);
-      if (!film) continue;
       const time = icalTime(event.start, event.timeZone ?? this.venue.timeZone);
-      screenings.push({
-        film,
-        url: event.url || this.venue.icalUrl,
-        venueName: this.venue.name,
-        postalCode: this.venue.postalCode,
-        date,
-        admission: detectAdmission(event.summary, event.description),
-        ...(time ? { time } : {}),
-      });
+      for (const film of filmsFromDriveInSummary(event.summary)) {
+        screenings.push({
+          film,
+          url: event.url || this.venue.icalUrl,
+          venueName: this.venue.name,
+          postalCode: this.venue.postalCode,
+          date,
+          admission: detectAdmission(event.summary, event.description),
+          ...(time ? { time } : {}),
+        });
+      }
     }
 
     return { days: await toVenueDays(screenings, request.zip, this.id), warnings: [] };

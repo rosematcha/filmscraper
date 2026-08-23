@@ -61,6 +61,7 @@ export class SlabSource implements Source {
     } catch (error) {
       return {
         days: [],
+        complete: false,
         warnings: [
           {
             kind: 'page-error',
@@ -70,9 +71,23 @@ export class SlabSource implements Source {
       };
     }
 
+    const events = parseSlabEvents(html);
+    if (events.length === 0) {
+      return {
+        days: [],
+        complete: false,
+        warnings: [
+          {
+            kind: 'page-error',
+            message: `${this.calendar.label}: the calendar payload contained no readable events.`,
+          },
+        ],
+      };
+    }
+
     const screenings: SimpleScreening[] = [];
     let skipped = 0;
-    for (const event of parseSlabEvents(html)) {
+    for (const event of events) {
       const instant = new Date(event.startDate);
       if (Number.isNaN(instant.getTime())) continue;
       const date = localDate(instant, event.timeZone);
@@ -101,7 +116,7 @@ export class SlabSource implements Source {
       skipped > 0
         ? [
             {
-              kind: 'page-error' as const,
+              kind: 'skipped-event' as const,
               message: `${this.calendar.label}: skipped ${String(skipped)} event${skipped === 1 ? '' : 's'} that named no specific film.`,
             },
           ]

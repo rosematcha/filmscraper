@@ -73,6 +73,7 @@ export class RubyCitySource implements Source {
     } catch (error) {
       return {
         days: [],
+        complete: false,
         warnings: [
           {
             kind: 'page-error',
@@ -88,6 +89,7 @@ export class RubyCitySource implements Source {
       // template moving, which would otherwise fail silently forever.
       return {
         days: [],
+        complete: false,
         warnings: [
           {
             kind: 'page-error',
@@ -127,7 +129,7 @@ export class RubyCitySource implements Source {
       skipped > 0
         ? [
             {
-              kind: 'page-error' as const,
+              kind: 'skipped-event' as const,
               message: `${RUBY_CITY.label}: skipped ${String(skipped)} screening${skipped === 1 ? '' : 's'} that named no specific film.`,
             },
           ]

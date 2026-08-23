@@ -172,7 +172,13 @@ export interface AggregatedMovie {
 }
 
 export interface ScrapeWarning {
-  readonly kind: 'expired-today' | 'radius-truncated' | 'page-error' | 'partial-horizon' | 'theater-lag';
+  readonly kind:
+    | 'expired-today'
+    | 'radius-truncated'
+    | 'page-error'
+    | 'skipped-event'
+    | 'partial-horizon'
+    | 'theater-lag';
   readonly message: string;
 }
 

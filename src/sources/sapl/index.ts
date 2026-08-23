@@ -124,7 +124,7 @@ export class SaplSource implements Source {
         if (!/movie/i.test(field(event, 'Event Type(s)'))) continue;
 
         considered++;
-        const title = typeof event.title === 'string' ? event.title : '';
+        const title = stripHtml(event.title);
         const description = stripHtml(event.description);
         const additionalInfo = field(event, 'Additional Info');
         const film = filmFromSaplEvent({ title, description, additionalInfo, date: eventDate });
@@ -160,14 +160,18 @@ export class SaplSource implements Source {
 
     if (skipped > 0) {
       warnings.push({
-        kind: 'page-error',
+        kind: 'skipped-event',
         message:
           `Library: ${String(skipped)} of ${String(considered)} movie-tagged events named no specific ` +
           `film (or were trivia and similar) and were skipped.`,
       });
     }
 
-    return { days: await toVenueDays(screenings, request.zip, this.id), warnings };
+    return {
+      days: await toVenueDays(screenings, request.zip, this.id),
+      warnings,
+      complete: !perDay.some(({ failure }) => failure !== null),
+    };
   }
 }
 

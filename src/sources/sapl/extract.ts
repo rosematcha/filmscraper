@@ -4,7 +4,7 @@ const NON_SCREENING =
 
 /** Series names that precede the film rather than naming one. */
 const SERIES_PREFIX =
-  /^(movie\s+monday|movie\s+matinee|matinee\s+movie|family\s+film|film\s+friday|first\s+friday\s+film|gen\s*x\s+nostalgia\s+night|anime\s+club|movie\s+night|teen\s+movie|senior\s+movie|classic\s+film|cult\s+classics?|dive[- ]in\s+movie)\b/i;
+  /^(movie\s+monday|movie\s+matinee|matinee\s+movie|family\s+film|film\s+friday|first\s+friday\s+film|gen\s*x\s+nostalgia\s+night|anime\s+club|movie\s+night|teen\s+movie|senior\s+movie|classic\s+film|cult\s+classics?|dive[- ]in\s+movie|watch\s*(?:&|and)\s*make)\b/i;
 
 /** Titles that name a programme, never a particular picture. */
 const PROGRAMME_ONLY =
@@ -45,7 +45,11 @@ export function isCancelled(title: string): boolean {
 }
 
 function cleanFilm(candidate: string): string | null {
-  const film = candidate.replace(TRAILING_RATING, '').replace(/\s+/g, ' ').trim().replace(/[!.]+$/, '');
+  const film = candidate
+    .replace(TRAILING_RATING, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[!.]+$/, '');
   if (film.length < 2) return null;
   if (PROGRAMME_ONLY.test(film) || SERIES_PREFIX.test(film)) return null;
   if (NON_SCREENING.test(film)) return null;
@@ -99,11 +103,12 @@ export function filmFromSaplEvent(event: SaplEvent): string | null {
   // Themed-but-not-a-screening events are excluded even when a film is named.
   if (NON_SCREENING.test(title)) return null;
 
-  // "Movie Monday: Fall (2022)" — the film follows the series name.
-  const colon = title.indexOf(':');
-  if (colon > 0) {
-    const head = title.slice(0, colon).trim();
-    const tail = title.slice(colon + 1).trim();
+  // `Movie Monday: Fall` and `Watch & Make - Monsters, Inc.` — the film
+  // follows the series name, with whichever separator that branch prefers.
+  const separator = /\s*(?::|[–—]|\s-\s)\s*/.exec(title);
+  if (separator?.index !== undefined && separator.index > 0) {
+    const head = title.slice(0, separator.index).trim();
+    const tail = title.slice(separator.index + separator[0].length).trim();
     if (SERIES_PREFIX.test(head) || /movie|film|cinema|screening|night/i.test(head)) {
       const film = cleanFilm(tail);
       if (film) return film;
@@ -115,7 +120,7 @@ export function filmFromSaplEvent(event: SaplEvent): string | null {
   if (fromLineup) return fromLineup;
 
   // A bare title that is itself a film, e.g. "The Rescuers Down Under".
-  if (!PROGRAMME_ONLY.test(title) && !SERIES_PREFIX.test(title) && colon === -1) {
+  if (!PROGRAMME_ONLY.test(title) && !SERIES_PREFIX.test(title) && separator === null) {
     const film = cleanFilm(title);
     // Guard against generic one-liners: require the description to mention a
     // screening, so "Summer Reading Kickoff" cannot slip through.

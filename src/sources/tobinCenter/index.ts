@@ -47,6 +47,7 @@ export class TobinCinemaSource implements Source {
     } catch (error) {
       return {
         days: [],
+        complete: false,
         warnings: [
           {
             kind: 'page-error',
@@ -56,10 +57,24 @@ export class TobinCinemaSource implements Source {
       };
     }
 
+    const events = parseTobinCinemaEvents(html);
+    if (events.length === 0) {
+      return {
+        days: [],
+        complete: false,
+        warnings: [
+          {
+            kind: 'page-error',
+            message: `${TOBIN_CINEMA.label}: the cinema page contained no readable events.`,
+          },
+        ],
+      };
+    }
+
     const pageAdmission = detectAdmission(textOf(html));
     const screenings: SimpleScreening[] = [];
     let skipped = 0;
-    for (const event of parseTobinCinemaEvents(html)) {
+    for (const event of events) {
       if (event.date < first || event.date > last) continue;
       const film = filmFromTobinTitle(event.title);
       if (!film) {
@@ -84,7 +99,7 @@ export class TobinCinemaSource implements Source {
       skipped > 0
         ? [
             {
-              kind: 'page-error' as const,
+              kind: 'skipped-event' as const,
               message: `${TOBIN_CINEMA.label}: skipped ${String(skipped)} event${skipped === 1 ? '' : 's'} that named no specific film.`,
             },
           ]
