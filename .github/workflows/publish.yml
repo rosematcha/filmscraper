@@ -134,13 +134,26 @@ jobs:
         run: |
           if [ -f web/public/data/latest.json ]; then
             node -e '
+              const fs = require("node:fs");
               const d = require("./web/public/data/latest.json");
-              const kb = (require("fs").statSync("web/public/data/latest.json").size / 1024).toFixed(0);
+              const kb = (fs.statSync("web/public/data/latest.json").size / 1024).toFixed(0);
+              const fullKb = fs.existsSync("web/public/data/full.json")
+                ? (fs.statSync("web/public/data/full.json").size / 1024).toFixed(0)
+                : "—";
+              const truncKb = fs.existsSync("web/public/data/truncated.json")
+                ? (fs.statSync("web/public/data/truncated.json").size / 1024).toFixed(0)
+                : "—";
+              let truncFilms = "—";
+              if (fs.existsSync("web/public/data/truncated.json")) {
+                truncFilms = String(JSON.parse(fs.readFileSync("web/public/data/truncated.json", "utf8")).films.length);
+              }
               console.log(`| field | value |\n|---|---|`);
               console.log(`| window | ${d.from} → ${d.to} |`);
               console.log(`| radius | ${d.radiusMiles} mi |`);
               console.log(`| horizon | ${d.horizon} |`);
               console.log(`| venue-days | ${d.days.length} |`);
-              console.log(`| size | ${kb} KB |`);
+              console.log(`| latest.json | ${kb} KB |`);
+              console.log(`| full.json | ${fullKb} KB |`);
+              console.log(`| truncated.json | ${truncKb} KB (${truncFilms} films) |`);
             ' >> "$GITHUB_STEP_SUMMARY"
           fi

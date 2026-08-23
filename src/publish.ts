@@ -7,10 +7,11 @@
  * result.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
 import { loadAliases } from './core/config.js';
 import { isDataset, mergeDataset, type Dataset } from './core/dataset.js';
+import { exportPublicDataset } from './core/export.js';
 import { dateRange } from './core/notes.js';
 import { allSources, dueSources, isComprehensiveFandangoRun } from './core/schedule.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
@@ -252,8 +253,21 @@ try {
     log(`[warning: ${warning.kind}] ${warning.message}`);
   }
 
-  await mkdir(dirname(options.out), { recursive: true });
+  const outDir = dirname(options.out);
+  await mkdir(outDir, { recursive: true });
   await writeFile(options.out, JSON.stringify(dataset), 'utf8');
+
+  const exportOptions = {
+    aliases,
+    timezone: options.timezone,
+  };
+  const truncated = exportPublicDataset(dataset, { ...exportOptions, mode: 'truncated' });
+  await writeFile(
+    join(outDir, 'full.json'),
+    JSON.stringify(exportPublicDataset(dataset, { ...exportOptions, mode: 'full' }), null, 2),
+    'utf8',
+  );
+  await writeFile(join(outDir, 'truncated.json'), JSON.stringify(truncated, null, 2), 'utf8');
 
   // Posting depth is measured on the freshly scraped days only: carried-over
   // days describe what a source had posted when *its* run happened.
@@ -262,9 +276,10 @@ try {
   const seconds = ((Date.now() - started) / 1000).toFixed(0);
   const carried = dataset.days.length - result.days.length;
   log(
-    `Wrote ${options.out} — ${String(dataset.days.length)} venue-days ` +
+    `Wrote ${options.out}, full.json, truncated.json — ${String(dataset.days.length)} venue-days ` +
       `(${String(result.days.length)} fresh, ${String(carried)} carried), ` +
-      `${String(result.theaters.length)} theaters, ${seconds}s`,
+      `${String(truncated.theaters.length)} theaters, ${String(truncated.films.length)} films ` +
+      `with upcoming showtimes, ${seconds}s`,
   );
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
