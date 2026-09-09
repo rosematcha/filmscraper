@@ -247,9 +247,9 @@ export default function App(): React.JSX.Element {
   /**
    * The tables in render order, each with its own heading and count.
    *
-   * The renderer hands back one flat list tagged by section; the main table is
-   * one of them rather than a special case, because the wide releases are what
-   * folds away now and the screenings are what leads.
+   * The renderer hands back one flat list already in reading order, tagged by
+   * section; this only groups it. The main table is one of them rather than a
+   * special case, because the wide releases are what folds away now.
    */
   const sections = useMemo(() => {
     const order: string[] = [];
@@ -267,10 +267,7 @@ export default function App(): React.JSX.Element {
       }
       entry.rows.push(row);
     }
-    // The main table renders last: it is the long tail of wide releases, and
-    // what changed this week is the reason to open the page.
-    const ids = [...order.filter((id) => id !== MAIN_ID), ...order.filter((id) => id === MAIN_ID)];
-    return ids.map((id) => {
+    return order.map((id) => {
       const entry = bySection.get(id);
       return { id, heading: entry?.heading ?? id, rows: entry?.rows ?? [] };
     });

@@ -218,11 +218,18 @@ function renderSections(
   const window = runWindow(result);
   const firstDateOf = (movie: AggregatedMovie): IsoDate | null =>
     result.firstDates?.get(movie.key) ?? null;
-  const sections = buildSections(result.movies, sectionOptions, window, {
+  const built = buildSections(result.movies, sectionOptions, window, {
     ...(result.upcoming ? { upcoming: result.upcoming } : {}),
     ...(result.firstDates ? { firstDateOf } : {}),
     watchedSince: result.watchedSince ?? null,
   });
+  // The main table reads last wherever it is rendered. It is the long tail of
+  // wide releases; what opens, closes and screens once is the reason to look,
+  // and the pasted markdown should be ordered the way the page is.
+  const sections = [
+    ...built.filter((section) => section.id !== 'main'),
+    ...built.filter((section) => section.id === 'main'),
+  ];
   return sections.map((section) => {
     const upcoming = SECTION_BY_ID.get(section.id)?.mode === 'upcoming';
     const order = sectionOrder(section.id, options.sort);
