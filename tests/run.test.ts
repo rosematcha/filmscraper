@@ -142,6 +142,18 @@ describe('classifyRun with history', () => {
     });
   });
 
+  it('calls a two-day tail a closing when the ledger knew the film', () => {
+    // Toy Story 5 with two days left is the most urgent last chance there is.
+    // Without history the two-date floor read it as a short booking.
+    const tail = ['2026-08-10', '2026-08-11'];
+    expect(classifyRun(tail, scraped, { firstDate: '2026-07-25' })).toEqual({
+      shape: 'closing',
+      date: '2026-08-11',
+    });
+    // A fresh two-night booking still reads as the pair of dates it is.
+    expect(classifyRun(tail, scraped, { firstDate: '2026-08-10' }).shape).toBe('listed');
+  });
+
   it('changes nothing without a ledger entry', () => {
     expect(classifyRun(WEEK.slice(2), posted, { firstDate: null })).toEqual({
       shape: 'opens',

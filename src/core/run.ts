@@ -184,7 +184,11 @@ export function classifyRun(
   // playing both days of a two-day known window and nothing after is ending,
   // and the date floor exists only to keep two-night bookings inside a fully
   // posted week from phrasing as runs — those never cover the known range.
+  // A film the ledger already knew about is a run whatever is left of it: two
+  // remaining days is the most urgent last chance there is, and the date floor
+  // exists only to stop a fresh two-night booking phrasing as one.
   const longEnough =
+    seenBefore ||
     playedDates.length >= MIN_DATES_FOR_RUN ||
     (playedDates.length >= 2 && coversSpan(playedKnown, known, windowStart, lastKnown));
   if (

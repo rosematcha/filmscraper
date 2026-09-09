@@ -231,7 +231,11 @@ export function opensWithin(movie: AggregatedMovie, ctx: SectionContext): boolea
   const start = ctx.windowDates[0];
   if (typeof first !== 'string' || start === undefined) return false;
   if (typeof since !== 'string' || first <= since) return false;
-  return first >= start;
+  if (first < start) return false;
+  // Nothing opens for one night. A single booking is new, but it is a
+  // screening rather than the start of a run, and the shape-based match
+  // excludes it for the same reason.
+  return movie.dates.length > 1;
 }
 
 /**

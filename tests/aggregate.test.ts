@@ -228,8 +228,9 @@ describe('showings and markers', () => {
     ]);
   });
 
-  it('marks an event only when every group carries the marker', () => {
-    // One early-access night does not make a wide release an event.
+  it('does not let a per-showing marker turn a release into an event', () => {
+    // One early-access night does not make a wide release a special screening,
+    // but it is still worth naming in the note.
     const mixed = [
       day(PALLADIUM, '2026-08-05', [
         listing('Oasis', '/o-1/movie-overview', [
@@ -242,6 +243,25 @@ describe('showings and markers', () => {
     expect(movie?.isEvent).toBe(false);
     expect([...(movie?.events.entries() ?? [])]).toEqual([['Early access', [PALLADIUM.name]]]);
     expect(movie?.eventDates.get('Early access')).toEqual(['2026-08-05']);
+  });
+
+  it('marks a Fathom booking even where one group carries no marker', () => {
+    // Real shape, from the Fathom run of The Passion of the Christ: most
+    // groups say "Fathom Features" and one venue's says nothing at all.
+    // Requiring every group made the whole broadcast read as an ordinary
+    // release.
+    const uneven = [
+      day(PALLADIUM, '2026-08-05', [
+        listing('The Passion of the Christ', '/p-1/movie-overview', [
+          group([[1182, 'Fathom Features']]),
+          group([
+            [2011, 'Reserved seating'],
+            [1012, 'Closed caption'],
+          ]),
+        ]),
+      ]),
+    ];
+    expect(aggregate(uneven, [PALLADIUM], OPTS)[0]?.isEvent).toBe(true);
   });
 
   it('recognises a fixture named in the sentinels', () => {

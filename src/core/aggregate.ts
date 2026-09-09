@@ -53,6 +53,27 @@ export function sourceRank(sourceId: string): number {
   return 50;
 }
 
+/**
+ * The same venue-days with every showtime marked live.
+ *
+ * `aggregate` drops a listing whose showtimes have all started, which is right
+ * for "what can I still see" and wrong for "what was playing". An evening run
+ * would otherwise record a film that has run for a month as first listed
+ * tomorrow, and the ledger would call it an opening.
+ */
+export function asListed(days: readonly VenueDay[]): VenueDay[] {
+  return days.map((day) => ({
+    ...day,
+    movies: day.movies.map((movie) => ({
+      ...movie,
+      groups: movie.groups.map((group) => ({
+        ...group,
+        showtimes: group.showtimes.map((showtime) => ({ ...showtime, expired: false })),
+      })),
+    })),
+  }));
+}
+
 /** Whether a listing is one of the year-round fixtures named in the aliases. */
 export function isFixtureTitle(
   title: string,
@@ -101,8 +122,7 @@ interface Accumulator {
   events: Map<string, Set<string>>;
   eventDates: Map<string, Set<IsoDate>>;
   showings: Showing[];
-  /** Live groups carrying a special-event marker, against the total seen. */
-  eventGroups: number;
+  isEvent: boolean;
   isFixture: boolean;
   sources: Set<string>;
   languages: Set<string>;
@@ -132,7 +152,7 @@ function blank(key: string, title: string, href: string): Accumulator {
     events: new Map(),
     eventDates: new Map(),
     showings: [],
-    eventGroups: 0,
+    isEvent: false,
     isFixture: false,
     sources: new Set(),
     languages: new Set(),
@@ -195,7 +215,6 @@ export function aggregate(
         const format = groupFormat(group);
         if (format) addTo(acc.formats, format, day.theater.name);
         const labels: string[] = [];
-        let eventHere = false;
         for (const amenity of group.amenities) {
           const c = classifyAmenity(amenity);
           if (c.cls === 'access' || c.cls === 'language') {
@@ -203,15 +222,20 @@ export function aggregate(
             addTo(acc.optional, c.label, day.theater.name);
             addTo(acc.optionalDates, c.label, day.date);
           } else if (c.cls === 'event') {
-            eventHere = true;
             if (c.noted) {
+              // A Q&A or an early-access night is a fact about this showing.
               labels.push(c.label);
               addTo(acc.events, c.label, day.theater.name);
               addTo(acc.eventDates, c.label, day.date);
+            } else {
+              // Fathom and the broadcast markers describe the booking, and
+              // Fandango tags them unevenly: the Fathom run of The Passion of
+              // the Christ has one venue whose group carries no marker at all.
+              // One is enough.
+              acc.isEvent = true;
             }
           }
         }
-        if (eventHere) acc.eventGroups++;
         acc.showings.push({
           date: day.date,
           theater: day.theater.name,
@@ -360,7 +384,7 @@ function mergeAccumulators(
     target.showings.push(...acc.showings);
     for (const source of acc.sources) target.sources.add(source);
     for (const language of acc.languages) target.languages.add(language);
-    target.eventGroups += acc.eventGroups;
+    target.isEvent ||= acc.isEvent;
     target.isFixture ||= acc.isFixture;
     target.foreignGroups += acc.foreignGroups;
     target.totalGroups += acc.totalGroups;
@@ -394,9 +418,7 @@ function mergeAccumulators(
       events: new Map([...acc.events].map(([k, v]) => [k, [...v].sort(byDistance)])),
       eventDates: new Map([...acc.eventDates].map(([k, v]) => [k, [...v].sort()])),
       showings: reconcileShowings(acc.showings, byDistance),
-      // Every live group marked, not any: one early-access night does not make
-      // a wide release an event, but a Fathom booking is marked throughout.
-      isEvent: acc.eventGroups > 0 && acc.eventGroups === acc.totalGroups,
+      isEvent: acc.isEvent,
       isFixture: acc.isFixture,
       sources: [...acc.sources].sort(),
       languages: acc.foreignGroups === acc.totalGroups ? [...acc.languages].sort() : [],

@@ -164,9 +164,13 @@ export interface AggregatedMovie {
   /** The same labels mapped to the dates they appear on. */
   readonly optionalDates: ReadonlyMap<string, readonly IsoDate[]>;
   /**
-   * True when every live group carried a special-event marker (e.g. Fathom
-   * Features). Any-group would send a wide release to the events table on the
-   * strength of one early-access showing.
+   * True when any live group carried a marker that describes the whole
+   * booking — Fathom Features, a broadcast, an anniversary run.
+   *
+   * Any-group, because Fandango tags them unevenly: the Fathom run of a film
+   * can have one venue whose group carries no marker. The per-showing markers
+   * in `events` deliberately do not set this, so an early-access night does
+   * not turn a wide release into a special screening.
    */
   readonly isEvent: boolean;
   /**

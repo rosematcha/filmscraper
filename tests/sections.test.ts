@@ -694,6 +694,17 @@ describe('coming soon and the ledger', () => {
     expect(titles(running, 'main')).toEqual(['Opened Friday']);
   });
 
+  it('does not open a one-night booking, however new it is', () => {
+    // A single Thursday screening is new, but nothing opens for one night.
+    const single = film('One Night', ['2026-08-06']);
+    const sections = buildSections([single], only('opens'), window, {
+      firstDateOf: () => '2026-08-06',
+      watchedSince: '2026-08-01',
+    });
+    expect(titles(sections, 'opens')).toEqual([]);
+    expect(titles(sections, 'main')).toEqual(['One Night']);
+  });
+
   it('opens nothing on a ledger that started the same day it first saw the film', () => {
     // Otherwise the first run after a fresh ledger reports the entire market
     // as opening this week.

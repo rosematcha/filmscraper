@@ -15,6 +15,7 @@ import { exportPublicDataset } from './core/export.js';
 import { isLedger, nextLedger, type LedgerState } from './core/ledger.js';
 import { dateRange } from './core/notes.js';
 import { allSources, dueSources, isComprehensiveFandangoRun } from './core/schedule.js';
+import { aggregate, asListed } from './core/aggregate.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
 import { laggingSources, postingSnapshot } from './core/posting.js';
 import { historyKv, readHistory, recordSnapshot } from './store/history.js';
@@ -300,10 +301,18 @@ try {
   await mkdir(outDir, { recursive: true });
   await writeFile(options.out, JSON.stringify(dataset), 'utf8');
 
+  // Built from what was *listed*, not from what can still be seen: an evening
+  // run finds today's matinees already started, and recording a month-old
+  // release as first listed tomorrow would have the site call it an opening.
+  //
   // Only the films this run saw are recorded, so a partial refresh cannot
   // pretend a film it never looked at has stopped being listed. A ledger that
   // could not be read is left alone rather than replaced with a new one.
-  const ledger = nextLedger(previousLedger, result.movies, from, new Date());
+  const listed = aggregate(asListed(result.days), result.theaters, {
+    aliases,
+    keepYears: true,
+  });
+  const ledger = nextLedger(previousLedger, listed, from, new Date());
   if (ledger) await writeFile(join(outDir, 'ledger.json'), JSON.stringify(ledger), 'utf8');
 
   const exportOptions = {

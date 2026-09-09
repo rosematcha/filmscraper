@@ -1,4 +1,4 @@
-import { aggregate, sourceRank, type AliasConfig } from './aggregate.js';
+import { aggregate, asListed, sourceRank, type AliasConfig } from './aggregate.js';
 import { classifyAmenity } from './amenities.js';
 import { chainLabel, chainOf } from './chains.js';
 import type { Dataset } from './dataset.js';
@@ -201,16 +201,7 @@ function filmIdentities(dataset: Dataset, aliases: AliasConfig): Map<string, Fil
     }
   }
 
-  const identityDays: VenueDay[] = dataset.days.map((day) => ({
-    ...day,
-    movies: day.movies.map((movie) => ({
-      ...movie,
-      groups: movie.groups.map((group) => ({
-        ...group,
-        showtimes: group.showtimes.map((showtime) => ({ ...showtime, expired: false })),
-      })),
-    })),
-  }));
+  const identityDays: VenueDay[] = asListed(dataset.days);
   const theaterList = [
     ...new Map(identityDays.map((day) => [day.theater.name, day.theater])).values(),
   ];
