@@ -59,6 +59,28 @@ jobs:
           node -e "const d=JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')); if(d.version!==2 || !Array.isArray(d.days) || typeof d.generatedAt!=='string') process.exit(1)" "$dataset_tmp"
           mv "$dataset_tmp" web/public/data/latest.json
 
+      - name: Preserve the listing ledger
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          # A deploy replaces the whole site, so a ledger the build does not
+          # carry is a ledger deleted. Openings are judged against it and it
+          # takes weeks of runs to rebuild, so it is carried forward whenever
+          # this run did not produce one of its own.
+          if [ -f web/public/data/ledger.json ]; then
+            echo "This run produced a ledger; keeping it."
+            exit 0
+          fi
+          mkdir -p web/public/data
+          tmp=$(mktemp)
+          if curl -fsS --max-time 30 "$SITE_URL/data/ledger.json" -o "$tmp" && node -e "const l=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8')); if(l.version!==1||typeof l.since!=='string'||typeof l.films!=='object'||l.films===null) process.exit(1)" "$tmp"; then
+            mv "$tmp" web/public/data/ledger.json
+            echo "Carried the published ledger forward."
+          else
+            rm -f "$tmp"
+            echo "No published ledger to carry forward yet."
+          fi
+
       - run: pnpm --filter filmscraper-web build
 
       - name: Deploy to Netlify
