@@ -74,7 +74,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: |
+          # Google's Chrome apt repo intermittently serves a Packages.gz whose
+          # hash does not match its own Release file, and that failure sinks
+          # the whole `apt-get update` that --with-deps runs. Playwright fetches
+          # its own Chromium build and needs nothing from that repo, so it is
+          # dropped rather than retried.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+                     /etc/apt/sources.list.d/google-chrome.sources
+          pnpm exec playwright install --with-deps chromium
 
       - name: Scrape
         # A manual run does everything; a scheduled one only what is due, then
