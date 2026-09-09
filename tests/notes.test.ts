@@ -283,6 +283,18 @@ describe('run gaps, history and markers', () => {
     expect(withHistory(m, null)).toBe('');
   });
 
+  it('names the opening day when the reliable range starts there', () => {
+    // An afternoon scrape marks today partial, so a Thursday opening plays the
+    // whole known range and the run shape says nothing. The ledger says it is
+    // new, and its own first date says which day.
+    const m = movie({ theaters: wide, dates: week.slice(3) });
+    const note = buildNotes(m, week, week[3] ?? '', week.at(-1) ?? '', OPTS, NAMES, undefined, {
+      firstDate: week[3] ?? null,
+      watchedSince: '2026-08-01',
+    });
+    expect(note).toBe('Opens Thursday');
+  });
+
   it('says nothing about a film first listed the day the ledger started', () => {
     // A ledger's first run sees every film in the market for the first time;
     // that is evidence of nothing.

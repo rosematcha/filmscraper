@@ -350,7 +350,16 @@ function whenClause(
 
   if (dateClause && limitedVenues) return `${dateClause} at ${venueList}`;
   if (dateClause) return dateClause;
-  if (newThisWeek) return limitedVenues ? `new this week at ${venueList}` : 'new this week';
+  if (newThisWeek) {
+    // An afternoon scrape marks today partial, so a Thursday opening covers
+    // the whole *reliable* range and the run shape has nothing to say. The
+    // film's own first date still does, and naming the day beats "new".
+    const opensOn = movie.dates[0] ?? '';
+    const start = windowDates[0] ?? '';
+    const phrase =
+      opensOn > start ? `opens ${weekdayOrDate(opensOn, windowDates)}` : 'new this week';
+    return limitedVenues ? `${phrase} at ${venueList}` : phrase;
+  }
   if (limitedVenues) return `only at ${venueList}`;
   return null;
 }
