@@ -46,40 +46,21 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # A deploy replaces the whole site, so every published file the build does
+      # not carry is a file deleted. Hand-rolling that per file is what dropped
+      # the two JSON exports on each code push; restoreData already fetches and
+      # validates all of them, and refuses to mix exports from another scrape.
+      #
       # This runs only after acquiring the same lock as the scheduled scrape,
-      # so the code deploy always carries the newest published dataset.
-      - name: Preserve current listings
+      # so the code deploy always carries the newest published data.
+      - name: Preserve published data
         env:
           SITE_URL: ${{ vars.SITE_URL }}
         run: |
           test -n "$SITE_URL"
-          mkdir -p web/public/data
-          dataset_tmp=$(mktemp)
-          curl -fsS --max-time 30 "$SITE_URL/data/latest.json" -o "$dataset_tmp"
-          node -e "const d=JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')); if(d.version!==2 || !Array.isArray(d.days) || typeof d.generatedAt!=='string') process.exit(1)" "$dataset_tmp"
-          mv "$dataset_tmp" web/public/data/latest.json
-
-      - name: Preserve the listing ledger
-        env:
-          SITE_URL: ${{ vars.SITE_URL }}
-        run: |
-          # A deploy replaces the whole site, so a ledger the build does not
-          # carry is a ledger deleted. Openings are judged against it and it
-          # takes weeks of runs to rebuild, so it is carried forward whenever
-          # this run did not produce one of its own.
-          if [ -f web/public/data/ledger.json ]; then
-            echo "This run produced a ledger; keeping it."
-            exit 0
-          fi
-          mkdir -p web/public/data
-          tmp=$(mktemp)
-          if curl -fsS --max-time 30 "$SITE_URL/data/ledger.json" -o "$tmp" && node -e "const l=JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8')); if(l.version!==1||typeof l.since!=='string'||typeof l.films!=='object'||l.films===null) process.exit(1)" "$tmp"; then
-            mv "$tmp" web/public/data/ledger.json
-            echo "Carried the published ledger forward."
-          else
-            rm -f "$tmp"
-            echo "No published ledger to carry forward yet."
-          fi
+          pnpm exec tsx src/restoreData.ts "$SITE_URL" web/public/data
+          # A deploy without listings would replace the site with an empty one.
+          test -f web/public/data/latest.json
 
       - run: pnpm --filter filmscraper-web build
 
