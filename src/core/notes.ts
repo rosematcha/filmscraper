@@ -196,10 +196,13 @@ export function timedClause(
   // 4:00p and Tuesday 10:10p at Park North", not the venue twice.
   const venue = byDate[0]?.venues[0];
   const oneVenue =
-    venue !== undefined && byDate.every((d) => d.venues.length === 1 && d.venues[0]?.theater === venue.theater);
+    venue !== undefined &&
+    byDate.every((d) => d.venues.length === 1 && d.venues[0]?.theater === venue.theater);
   const when = (date: IsoDate): string => weekdayOrDate(date, windowDates);
   if (oneVenue) {
-    const nights = byDate.map(({ date, venues }) => `${when(date)} ${humanList(venues[0]?.times ?? [])}`);
+    const nights = byDate.map(
+      ({ date, venues }) => `${when(date)} ${humanList(venues[0]?.times ?? [])}`,
+    );
     return `${humanList(nights)} at ${short(venue.theater)}`;
   }
   return byDate.map(({ date, venues }) => `${when(date)} ${dayClause(venues, short)}`).join(', ');

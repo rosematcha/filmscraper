@@ -146,7 +146,9 @@ export function openCaptionEntry(movie: AggregatedMovie): AggregatedMovie {
     ...movie,
     theaters: [...theaters],
     dates: [...dates],
-    showings: movie.showings.filter((s) => theaters.has(s.theater) && dates.has(s.date)),
+    // By label, not by venue and date: the same screen runs a captioned 7:00p
+    // and a plain 4:00p, and only the first belongs under this heading.
+    showings: movie.showings.filter((s) => s.labels.includes(OPEN_CAPTION_LABEL)),
     formats: new Map(),
     optional: new Map(),
     optionalDates: new Map(),
@@ -163,13 +165,13 @@ export function openCaptionEntry(movie: AggregatedMovie): AggregatedMovie {
  * multiplex must not borrow the week to describe the Saturday.
  */
 export function freeEntry(movie: AggregatedMovie): AggregatedMovie {
-  const venues = new Set(movie.freeVenues);
-  const dates = new Set(movie.freeDates);
   return {
     ...movie,
     theaters: movie.freeVenues,
     dates: movie.freeDates,
-    showings: movie.showings.filter((s) => venues.has(s.theater) && dates.has(s.date)),
+    // The listing's own word, so a venue that is free one night and ticketed
+    // the next contributes only the free night.
+    showings: movie.showings.filter((s) => s.admission === 'free'),
     formats: new Map(),
   };
 }
@@ -502,7 +504,10 @@ export function buildSections(
 
   for (const section of active.filter((s) => s.mode === 'upcoming')) {
     const upcoming = (extras.upcoming ?? []).filter(
-      (movie) => section.match(movie, ctx) && !(movie.foreign && options.excludeForeign),
+      (movie) =>
+        section.match(movie, ctx) &&
+        !(movie.foreign && options.excludeForeign) &&
+        !hiddenByReach(movie, options),
     );
     collected.get(section.id)?.push(...upcoming);
   }

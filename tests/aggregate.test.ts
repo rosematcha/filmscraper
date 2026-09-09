@@ -212,6 +212,8 @@ describe('showings and markers', () => {
         theater: PALLADIUM.name,
         times: ['7:00p'],
         format: 'IMAX',
+        labels: [],
+        admission: 'unknown',
         sourceId: 'fandango',
       },
       {
@@ -219,6 +221,8 @@ describe('showings and markers', () => {
         theater: PALLADIUM.name,
         times: ['4:00p'],
         format: null,
+        labels: [],
+        admission: 'unknown',
         sourceId: 'fandango',
       },
     ]);
@@ -278,6 +282,8 @@ describe('showings and markers', () => {
         theater: plaza.name,
         times: ['7:00p'],
         format: null,
+        labels: [],
+        admission: 'unknown',
         sourceId: 'mission-marquee',
       },
     ]);

@@ -359,6 +359,26 @@ describe('open-caption table', () => {
     ).toEqual(['Captioned', 'Plain']);
   });
 
+  it('keeps only the captioned screenings, not the whole day at that venue', () => {
+    // A screen runs a plain 4:00p and a captioned 7:00p. Filtering by venue
+    // and date alone kept both, so the captioned table printed a time nobody
+    // could see captioned.
+    const showing = (times: string[], labels: string[]) => ({
+      date: '2026-08-05',
+      theater: 'Regal',
+      times,
+      format: null,
+      labels,
+      admission: 'unknown' as const,
+      sourceId: 'fandango',
+    });
+    const film: AggregatedMovie = {
+      ...withOc('Spider-Man', true),
+      showings: [showing(['4:00p'], []), showing(['7:00p'], ['Open caption'])],
+    };
+    expect(openCaptionEntry(film).showings.flatMap((s) => s.times)).toEqual(['7:00p']);
+  });
+
   it('narrows the captioned entry to its own venues and dates', () => {
     // All poodles are dogs: the captioned booking is a subset of the run, so it
     // must not inherit the film's full twenty-theater reach.
@@ -639,6 +659,19 @@ describe('coming soon and the ledger', () => {
     const fixture = film('Fixture', ['2026-08-20'], { isFixture: true });
     const sections = buildSections([], only('coming'), window, { upcoming: [later, fixture] });
     expect(titles(sections, 'coming')).toEqual(['Later']);
+  });
+
+  it('applies the reach filters to what is coming', () => {
+    const wide = film('Wide', ['2026-08-20'], { theaters: ['a', 'b', 'c', 'd'] });
+    const one = film('Single', ['2026-08-20']);
+    const shown = buildSections([], { ...only('coming'), hideWide: true }, window, {
+      upcoming: [wide, one],
+    });
+    expect(titles(shown, 'coming')).toEqual(['Single']);
+    const hidden = buildSections([], { ...only('coming'), hideSingle: true }, window, {
+      upcoming: [wide, one],
+    });
+    expect(titles(hidden, 'coming')).toEqual(['Wide']);
   });
 
   it('is absent without anything upcoming', () => {

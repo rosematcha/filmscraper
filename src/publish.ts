@@ -12,7 +12,7 @@ import { Command, InvalidArgumentError } from 'commander';
 import { loadAliases } from './core/config.js';
 import { isDataset, mergeDataset, type Dataset } from './core/dataset.js';
 import { exportPublicDataset } from './core/export.js';
-import { isLedger, updateLedger, type Ledger } from './core/ledger.js';
+import { isLedger, nextLedger, type LedgerState } from './core/ledger.js';
 import { dateRange } from './core/notes.js';
 import { allSources, dueSources, isComprehensiveFandangoRun } from './core/schedule.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
@@ -127,25 +127,45 @@ async function loadPrevious(source: string | undefined): Promise<Dataset | null>
 /**
  * The ledger the last run published, which sits beside the dataset.
  *
- * Optional in every direction: a site that has never published one starts
- * fresh, and a run that cannot reach it still produces a dataset.
+ * The three outcomes are kept apart because `nextLedger` treats them
+ * differently: only a site that genuinely has none starts a fresh one.
  */
-async function loadPreviousLedger(source: string | undefined): Promise<Ledger | null> {
-  if (!source) return null;
+async function loadPreviousLedger(source: string | undefined): Promise<LedgerState> {
+  if (!source) return { kind: 'absent' };
   const target = source.replace(/(?<!:)\/{2,}/g, '/').replace(/[^/]*$/, 'ledger.json');
   try {
-    const text = target.startsWith('http')
-      ? await (await fetchWithPolicy(target, { redirect: 'follow' })).text()
-      : await readFile(target, 'utf8');
+    let text: string;
+    if (target.startsWith('http')) {
+      const response = await fetchWithPolicy(target, { redirect: 'follow' });
+      // A 404 is the site saying it has none, which is an answer.
+      if (response.status === 404) return { kind: 'absent' };
+      if (!response.ok) return { kind: 'unreadable', reason: `HTTP ${String(response.status)}` };
+      text = await response.text();
+    } else {
+      try {
+        text = await readFile(target, 'utf8');
+      } catch {
+        return { kind: 'absent' };
+      }
+    }
     const parsed: unknown = JSON.parse(text);
-    return isLedger(parsed) ? parsed : null;
-  } catch {
-    return null;
+    // Served but not a ledger: an older version, or the SPA shell. Either way
+    // it is not evidence that no history exists.
+    if (!isLedger(parsed)) return { kind: 'unreadable', reason: 'unexpected structure' };
+    return { kind: 'loaded', ledger: parsed };
+  } catch (error) {
+    return { kind: 'unreadable', reason: error instanceof Error ? error.message : 'unknown' };
   }
 }
 
 const previous = await loadPrevious(options.mergeFrom);
 const previousLedger = await loadPreviousLedger(options.mergeFrom);
+if (previousLedger.kind === 'unreadable') {
+  log(
+    `Could not read the published ledger (${previousLedger.reason}); leaving it untouched. ` +
+      `Openings will be judged without history until the next run reads it.`,
+  );
+}
 const aliases = await loadAliases();
 
 const unknownSources = (options.sources ?? []).filter(
@@ -281,9 +301,10 @@ try {
   await writeFile(options.out, JSON.stringify(dataset), 'utf8');
 
   // Only the films this run saw are recorded, so a partial refresh cannot
-  // pretend a film it never looked at has stopped being listed.
-  const ledger = updateLedger(previousLedger, result.movies, from, new Date());
-  await writeFile(join(outDir, 'ledger.json'), JSON.stringify(ledger), 'utf8');
+  // pretend a film it never looked at has stopped being listed. A ledger that
+  // could not be read is left alone rather than replaced with a new one.
+  const ledger = nextLedger(previousLedger, result.movies, from, new Date());
+  if (ledger) await writeFile(join(outDir, 'ledger.json'), JSON.stringify(ledger), 'utf8');
 
   const exportOptions = {
     aliases,
@@ -304,8 +325,11 @@ try {
   const seconds = ((Date.now() - started) / 1000).toFixed(0);
   const carried = dataset.days.length - result.days.length;
   log(
-    `Wrote ${options.out}, full.json, truncated.json, ledger.json ` +
-      `(${String(Object.keys(ledger.films).length)} films remembered) — ` +
+    `Wrote ${options.out}, full.json, truncated.json` +
+      (ledger
+        ? `, ledger.json (${String(Object.keys(ledger.films).length)} films remembered)`
+        : '') +
+      ` — ` +
       `${String(dataset.days.length)} venue-days ` +
       `(${String(result.days.length)} fresh, ${String(carried)} carried), ` +
       `${String(truncated.theaters.length)} theaters, ${String(truncated.films.length)} films ` +

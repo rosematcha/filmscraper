@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { freshnessLine, relativeAge, sourceFailures } from '../src/core/freshness.js';
+import { freeEntry } from '../src/core/sections.js';
 import { dayDetail, venueDetail } from '../src/core/views.js';
 import type { Dataset } from '../src/core/dataset.js';
 import type { AggregatedMovie, Showing } from '../src/core/types.js';
@@ -9,6 +10,8 @@ const showing = (date: string, theater: string, times: string[]): Showing => ({
   theater,
   times,
   format: null,
+  labels: [],
+  admission: 'unknown',
   sourceId: 'fandango',
 });
 
@@ -38,6 +41,17 @@ const film = (showings: Showing[]): AggregatedMovie => ({
 
 const short = (name: string): string => name.replace('Alamo Drafthouse ', '');
 const WEEK = ['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13'];
+
+describe('projected entries', () => {
+  it('keeps only the free screenings in a free entry', () => {
+    // The same venue can run a free night and a ticketed one; only the first
+    // belongs under "Free screenings".
+    const paid = { ...showing('2026-09-09', 'A', ['7:00p']), admission: 'paid' as const };
+    const free = { ...showing('2026-09-10', 'A', ['8:00p']), admission: 'free' as const };
+    const m = { ...film([paid, free]), freeVenues: ['A'], freeDates: ['2026-09-10'] };
+    expect(freeEntry(m).showings.flatMap((s) => s.times)).toEqual(['8:00p']);
+  });
+});
 
 describe('dayDetail', () => {
   it('names each venue with its times', () => {

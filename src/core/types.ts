@@ -114,6 +114,16 @@ export interface Showing {
   readonly times: readonly string[];
   /** Noteworthy format for these times, when the group carried one. */
   readonly format: string | null;
+  /**
+   * Access, language and event labels this group carried.
+   *
+   * Carried per showing because they are: the 7:00p is open-captioned and the
+   * 4:00p is not, and a table about captioned screenings must be able to say
+   * so rather than borrowing the whole day's times.
+   */
+  readonly labels: readonly string[];
+  /** What the listing said the screening costs. */
+  readonly admission: Admission;
   readonly sourceId: string;
 }
 

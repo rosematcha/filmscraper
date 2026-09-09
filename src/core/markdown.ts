@@ -1,4 +1,4 @@
-import { buildNotes, humanList, monthDay, shortenTheater, weekdayAndDate } from './notes.js';
+import { buildNotes, humanList, shortenTheater, weekdayAndDate } from './notes.js';
 import {
   buildSections,
   DEFAULT_SECTION_OPTIONS,
@@ -272,6 +272,3 @@ export function renderWarnings(result: ScrapeResult): string {
   if (result.warnings.length === 0) return '';
   return result.warnings.map((w) => `> **Note:** ${w.message}`).join('\n>\n');
 }
-
-/** Re-exported so the site can phrase a date the way the notes do. */
-export { monthDay };

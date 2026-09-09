@@ -194,28 +194,33 @@ export function aggregate(
       for (const group of live) {
         const format = groupFormat(group);
         if (format) addTo(acc.formats, format, day.theater.name);
-        acc.showings.push({
-          date: day.date,
-          theater: day.theater.name,
-          times: group.showtimes.filter((s) => !s.expired).map((s) => s.time),
-          format,
-          sourceId,
-        });
+        const labels: string[] = [];
         let eventHere = false;
         for (const amenity of group.amenities) {
           const c = classifyAmenity(amenity);
           if (c.cls === 'access' || c.cls === 'language') {
+            labels.push(c.label);
             addTo(acc.optional, c.label, day.theater.name);
             addTo(acc.optionalDates, c.label, day.date);
           } else if (c.cls === 'event') {
             eventHere = true;
             if (c.noted) {
+              labels.push(c.label);
               addTo(acc.events, c.label, day.theater.name);
               addTo(acc.eventDates, c.label, day.date);
             }
           }
         }
         if (eventHere) acc.eventGroups++;
+        acc.showings.push({
+          date: day.date,
+          theater: day.theater.name,
+          times: group.showtimes.filter((s) => !s.expired).map((s) => s.time),
+          format,
+          labels: [...new Set(labels)],
+          admission: listing.admission ?? 'unknown',
+          sourceId,
+        });
         // A film counts as foreign only when *every* showing is non-English.
         // Spider-Man has one Spanish-dubbed screening among dozens; that makes
         // it a dub of an English film, not a foreign release.
@@ -272,7 +277,9 @@ function reconcileShowings(
 ): Showing[] {
   const best = new Map<string, Showing>();
   for (const showing of showings) {
-    const key = [showing.date, showing.theater, showing.format ?? ''].join('|');
+    // Labels are part of the identity: the captioned 7:00p and the plain
+    // 4:00p are two groups at one venue on one date, not a clash.
+    const key = [showing.date, showing.theater, showing.format ?? '', ...showing.labels].join('|');
     const prior = best.get(key);
     if (!prior || sourceRank(showing.sourceId) > sourceRank(prior.sourceId)) {
       best.set(key, showing);

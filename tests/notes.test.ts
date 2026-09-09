@@ -4,6 +4,7 @@ import {
   DEFAULT_RENDER_OPTIONS,
   type AggregatedMovie,
   type RenderOptions,
+  type Showing,
 } from '../src/core/types.js';
 
 const OPTS = DEFAULT_RENDER_OPTIONS;
@@ -172,11 +173,13 @@ describe('buildNotes', () => {
 
 describe('timed bookings', () => {
   const week = dateRange('2026-08-03', '2026-08-09');
-  const showing = (date: string, theater: string, times: string[]) => ({
+  const showing = (date: string, theater: string, times: string[]): Showing => ({
     date,
     theater,
     times,
     format: null,
+    labels: [],
+    admission: 'unknown',
     sourceId: 'fandango',
   });
   const LIVE_OAK = 'Regal Live Oak & RPX';

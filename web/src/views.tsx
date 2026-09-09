@@ -1,5 +1,6 @@
 import type { AggregatedMovie, IsoDate, Theater } from '@core/core/types.js';
 import { weekdayAndDate } from '@core/core/notes.js';
+import { SECTION_BY_ID } from '@core/core/sections.js';
 import { dayDetail, venueDetail } from '@core/core/views.js';
 import { Section } from './controls';
 
@@ -148,14 +149,19 @@ function DetailTable({
 /**
  * The film rows once each, in table order.
  *
- * Duplicating tables (free, open captions) list a film the main table also
- * carries; a day or venue answers for the film once.
+ * A day or a venue answers for a film once and in full. The narrowed entries
+ * the duplicating tables carry — the free screenings, the captioned ones —
+ * describe a subset of the run, so they are skipped in favour of the row that
+ * describes the whole of it. Next week's listings have no place in this
+ * week's days either.
  */
 function distinct(rows: readonly Row[]): Row[] {
   const seen = new Set<string>();
   const out: Row[] = [];
   for (const row of rows) {
-    if (row.section === 'coming' || seen.has(row.movie.key)) continue;
+    const mode = SECTION_BY_ID.get(row.section)?.mode;
+    if (mode === 'upcoming' || mode === 'duplicates') continue;
+    if (seen.has(row.movie.key)) continue;
     seen.add(row.movie.key);
     out.push(row);
   }

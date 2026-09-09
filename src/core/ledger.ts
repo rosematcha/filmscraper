@@ -127,6 +127,36 @@ export function updateLedger(
   return { version: LEDGER_VERSION, updatedAt: now.toISOString(), since, films };
 }
 
+/**
+ * What a run managed to learn about the previously published ledger.
+ *
+ * `absent` and `unreadable` are kept apart deliberately. A site that has never
+ * published one should start a fresh ledger; a site whose ledger this run
+ * merely failed to fetch must not be handed one, because a ledger claiming to
+ * have started today reports every film in the city as opening this week and
+ * silently discards months of history.
+ */
+export type LedgerState =
+  | { readonly kind: 'loaded'; readonly ledger: Ledger }
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'unreadable'; readonly reason: string };
+
+/**
+ * The ledger to publish, or null to leave the published one alone.
+ *
+ * Null is the whole point: overwriting history with a ledger that begins today
+ * is worse than publishing nothing, because the next run would believe it.
+ */
+export function nextLedger(
+  state: LedgerState,
+  movies: readonly AggregatedMovie[],
+  runDay: IsoDate,
+  now: Date,
+): Ledger | null {
+  if (state.kind === 'unreadable') return null;
+  return updateLedger(state.kind === 'loaded' ? state.ledger : null, movies, runDay, now);
+}
+
 /** Film key -> first listed date, in the shape the renderer takes. */
 export function firstDates(ledger: Ledger | null): ReadonlyMap<string, IsoDate> {
   const out = new Map<string, IsoDate>();

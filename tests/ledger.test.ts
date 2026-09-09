@@ -3,6 +3,7 @@ import {
   firstDates,
   isLedger,
   LEDGER_VERSION,
+  nextLedger,
   updateLedger,
   watchedSince,
 } from '../src/core/ledger.js';
@@ -97,6 +98,30 @@ describe('how far back the ledger reaches', () => {
     expect(watchedSince(updateLedger(null, [film('x', ['2026-09-08'])], '2026-09-08', NOW))).toBe(
       '2026-09-08',
     );
+  });
+});
+
+describe('nextLedger', () => {
+  const movies = [film('x', ['2026-09-08'])];
+
+  it('starts a ledger when the site genuinely has none', () => {
+    const next = nextLedger({ kind: 'absent' }, movies, '2026-09-08', NOW);
+    expect(next?.since).toBe('2026-09-08');
+  });
+
+  it('folds the run into the ledger it was given', () => {
+    const first = updateLedger(null, [film('x', ['2026-09-01'])], '2026-09-01', NOW);
+    const next = nextLedger({ kind: 'loaded', ledger: first }, movies, '2026-09-08', NOW);
+    expect(next?.since).toBe('2026-09-01');
+    expect(next?.films['x']?.firstDate).toBe('2026-09-01');
+  });
+
+  it('publishes nothing when the previous ledger could not be read', () => {
+    // Overwriting is worse than skipping: a ledger that begins today reports
+    // the whole market as opening this week, and the next run believes it.
+    expect(
+      nextLedger({ kind: 'unreadable', reason: 'HTTP 500' }, movies, '2026-09-08', NOW),
+    ).toBeNull();
   });
 });
 
