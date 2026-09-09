@@ -77,6 +77,33 @@ describe('restorePublishedData', () => {
     });
   });
 
+  it('restores the ledger beside the dataset when it is readable', async () => {
+    const ledger = {
+      version: 1,
+      updatedAt: generatedAt,
+      films: {
+        x: {
+          title: 'X',
+          firstDate: '2026-08-01',
+          lastDate: '2026-08-30',
+          firstSeen: '2026-08-01',
+          lastSeen: '2026-08-23',
+        },
+      },
+    };
+    mockSite({ 'ledger.json': ledger });
+    const directory = await target();
+    await expect(restorePublishedData('https://example.test', directory)).resolves.toBe(true);
+    expect(JSON.parse(await readFile(join(directory, 'ledger.json'), 'utf8'))).toEqual(ledger);
+  });
+
+  it('leaves the ledger out when the site has none', async () => {
+    mockSite({ 'ledger.json': { not: 'a ledger' } });
+    const directory = await target();
+    await expect(restorePublishedData('https://example.test', directory)).resolves.toBe(true);
+    await expect(readFile(join(directory, 'ledger.json'), 'utf8')).rejects.toThrow();
+  });
+
   it('never combines exports from a different scrape', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     mockSite({ 'full.json': publicExport('full', '2026-08-22T18:00:00.000Z') });

@@ -2,6 +2,7 @@
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isLedger, type Ledger } from './core/ledger.js';
 
 interface RawDatasetHeader {
   readonly generatedAt: string;
@@ -140,10 +141,24 @@ export async function restorePublishedData(baseUrl: string, targetDir: string): 
     console.warn('published exports do not match latest.json; leaving both exports out');
   }
 
+  // The ledger is history rather than a snapshot of this scrape, so it is
+  // restored whenever it is readable and never tied to the exports' fate.
+  let ledger: Downloaded<Ledger> | null = null;
+  try {
+    ledger = await download(`${base}/data/ledger.json`, (value) =>
+      isLedger(value) ? value : null,
+    );
+  } catch (error) {
+    console.warn(
+      `no valid published ledger available (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+
   await mkdir(targetDir, { recursive: true });
   const stage = await mkdtemp(join(targetDir, '.restore-'));
   try {
     await writeFile(join(stage, 'latest.json'), latest.text, 'utf8');
+    if (ledger) await writeFile(join(stage, 'ledger.json'), ledger.text, 'utf8');
     if (completeExports) {
       await Promise.all(
         exports.map((item, index) =>
@@ -153,6 +168,7 @@ export async function restorePublishedData(baseUrl: string, targetDir: string): 
     }
 
     await rename(join(stage, 'latest.json'), join(targetDir, 'latest.json'));
+    if (ledger) await rename(join(stage, 'ledger.json'), join(targetDir, 'ledger.json'));
     if (completeExports) {
       await rename(join(stage, 'full.json'), join(targetDir, 'full.json'));
       await rename(join(stage, 'truncated.json'), join(targetDir, 'truncated.json'));

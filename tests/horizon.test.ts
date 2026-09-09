@@ -59,7 +59,9 @@ describe('detectHorizon', () => {
   });
 
   it('handles a single-date window', () => {
-    expect(detectHorizon([venueDay('2026-08-02', 5)], ['2026-08-02'], '2026-08-02')).toBe('2026-08-02');
+    expect(detectHorizon([venueDay('2026-08-02', 5)], ['2026-08-02'], '2026-08-02')).toBe(
+      '2026-08-02',
+    );
   });
 
   it('warns only when the horizon falls short of the window', () => {
@@ -74,7 +76,12 @@ describe('laggingTheaters', () => {
   const TODAY = WEEK[0] ?? '';
 
   /** One venue-day listing the given titles, all live. */
-  function at(theater: string, date: string, titles: readonly string[], sourceId?: string): VenueDay {
+  function at(
+    theater: string,
+    date: string,
+    titles: readonly string[],
+    sourceId?: string,
+  ): VenueDay {
     const movies: MovieListing[] = titles.map((title) => ({
       title,
       href: `/${title.replaceAll(/\W+/g, '-').toLowerCase()}/movie-overview`,
@@ -176,7 +183,7 @@ describe('laggingTheaters', () => {
     expect(warning?.kind).toBe('theater-lag');
     expect(warning?.message).toBe(
       'Some theaters have not posted full schedules yet: Rivercenter and Santikos Galaxy have ' +
-        'listings through 2026-08-04; City Base through 2026-08-05. Most theaters announce the ' +
+        'listings through Tuesday, August 4; City Base through Wednesday, August 5. Most theaters announce the ' +
         'coming week on Tuesday or Wednesday, so a film missing at these venues after those ' +
         'dates may not be on sale yet.',
     );
@@ -185,7 +192,7 @@ describe('laggingTheaters', () => {
   it('speaks in the singular for a lone laggard', () => {
     const warning = theaterLagWarning([{ theater: RIVERCENTER, postedThrough: '2026-08-04' }], {});
     expect(warning?.message).toBe(
-      'AMC Rivercenter 11 with Alamo IMAX has not posted full schedules past 2026-08-04 yet. ' +
+      'AMC Rivercenter 11 with Alamo IMAX has not posted full schedules past Tuesday, August 4 yet. ' +
         'Most theaters announce the coming week on Tuesday or Wednesday, so a film missing ' +
         'there after that date may not be on sale yet.',
     );
@@ -200,7 +207,7 @@ describe('laggingTheaters', () => {
       ],
       {},
     );
-    expect(warning?.message).toContain('Theater A has listings through 2026-08-04');
+    expect(warning?.message).toContain('Theater A has listings through Tuesday, August 4');
   });
 
   it('speaks of one date when every laggard shares a boundary', () => {
@@ -256,12 +263,16 @@ describe('describeDates', () => {
 
   it('lists genuinely broken runs', () => {
     const played = ['2026-08-02', '2026-08-04', '2026-08-06'];
-    expect(describeDates(played, WEEK, WEEK[0] ?? '', HORIZON)).toBe('Sunday, Tuesday and Thursday only');
+    expect(describeDates(played, WEEK, WEEK[0] ?? '', HORIZON)).toBe(
+      'Sunday, Tuesday and Thursday only',
+    );
   });
 
   it('treats the whole window as posted when the horizon is the last date', () => {
     const short = ['2026-08-04', '2026-08-05'];
-    expect(describeDates(['2026-08-05'], short, short[0] ?? '', '2026-08-05')).toBe('Wednesday only');
+    expect(describeDates(['2026-08-05'], short, short[0] ?? '', '2026-08-05')).toBe(
+      'Wednesday only',
+    );
     expect(describeDates(short, short, short[0] ?? '', '2026-08-05')).toBeNull();
   });
 });

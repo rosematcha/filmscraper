@@ -1,7 +1,7 @@
 import { aggregate, isLive, type AliasConfig } from './aggregate.js';
 import { applyVenueFilter } from './filters.js';
 import type { Coords } from './geo.js';
-import { dateRange, humanList, shortenTheater } from './notes.js';
+import { dateRange, humanList, shortenTheater, weekdayAndDate } from './notes.js';
 import type {
   IsoDate,
   ProgressFn,
@@ -273,20 +273,23 @@ export function theaterLagWarning(
     `Most theaters announce the coming week on Tuesday or Wednesday, so a film missing ` +
     `${where} after ${when} may not be on sale yet.`;
 
+  // Dates are spelled out the way the notes spell them: the warning sits
+  // above a table that says "through Thursday", not "through 2026-09-10".
   if (lags.length === 1) {
     return {
       kind: 'theater-lag',
       message:
         `${shortenTheater(first.theater, theaterNames)} has not posted full schedules ` +
-        `past ${first.postedThrough} yet. ${explain}`,
+        `past ${weekdayAndDate(first.postedThrough)} yet. ${explain}`,
     };
   }
 
   const groups = [...byDate]
     .map(([date, names], i) =>
       i === 0
-        ? `${humanList(names)} ${names.length === 1 ? 'has' : 'have'} listings through ${date}`
-        : `${humanList(names)} through ${date}`,
+        ? `${humanList(names)} ${names.length === 1 ? 'has' : 'have'} listings through ` +
+          weekdayAndDate(date)
+        : `${humanList(names)} through ${weekdayAndDate(date)}`,
     )
     .join('; ');
   return {
@@ -301,7 +304,8 @@ export function horizonWarning(horizon: IsoDate, dates: readonly IsoDate[]): Scr
   return {
     kind: 'partial-horizon',
     message:
-      `Fandango has only posted full schedules through ${horizon}. Dates after that show pre-sold ` +
+      `Fandango has only posted full schedules through ${weekdayAndDate(horizon)}. ` +
+      `Dates after that show pre-sold ` +
       `events and advance tickets, so a film missing from them may simply not be on sale yet.`,
   };
 }

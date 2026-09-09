@@ -12,6 +12,7 @@ import { Command, InvalidArgumentError } from 'commander';
 import { loadAliases } from './core/config.js';
 import { isDataset, mergeDataset, type Dataset } from './core/dataset.js';
 import { exportPublicDataset } from './core/export.js';
+import { isLedger, updateLedger, type Ledger } from './core/ledger.js';
 import { dateRange } from './core/notes.js';
 import { allSources, dueSources, isComprehensiveFandangoRun } from './core/schedule.js';
 import { runPipeline, todayIn } from './core/pipeline.js';
@@ -123,7 +124,28 @@ async function loadPrevious(source: string | undefined): Promise<Dataset | null>
   }
 }
 
+/**
+ * The ledger the last run published, which sits beside the dataset.
+ *
+ * Optional in every direction: a site that has never published one starts
+ * fresh, and a run that cannot reach it still produces a dataset.
+ */
+async function loadPreviousLedger(source: string | undefined): Promise<Ledger | null> {
+  if (!source) return null;
+  const target = source.replace(/(?<!:)\/{2,}/g, '/').replace(/[^/]*$/, 'ledger.json');
+  try {
+    const text = target.startsWith('http')
+      ? await (await fetchWithPolicy(target, { redirect: 'follow' })).text()
+      : await readFile(target, 'utf8');
+    const parsed: unknown = JSON.parse(text);
+    return isLedger(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 const previous = await loadPrevious(options.mergeFrom);
+const previousLedger = await loadPreviousLedger(options.mergeFrom);
 const aliases = await loadAliases();
 
 const unknownSources = (options.sources ?? []).filter(
@@ -258,6 +280,11 @@ try {
   await mkdir(outDir, { recursive: true });
   await writeFile(options.out, JSON.stringify(dataset), 'utf8');
 
+  // Only the films this run saw are recorded, so a partial refresh cannot
+  // pretend a film it never looked at has stopped being listed.
+  const ledger = updateLedger(previousLedger, result.movies, from, new Date());
+  await writeFile(join(outDir, 'ledger.json'), JSON.stringify(ledger), 'utf8');
+
   const exportOptions = {
     aliases,
     timezone: options.timezone,
@@ -277,7 +304,9 @@ try {
   const seconds = ((Date.now() - started) / 1000).toFixed(0);
   const carried = dataset.days.length - result.days.length;
   log(
-    `Wrote ${options.out}, full.json, truncated.json — ${String(dataset.days.length)} venue-days ` +
+    `Wrote ${options.out}, full.json, truncated.json, ledger.json ` +
+      `(${String(Object.keys(ledger.films).length)} films remembered) — ` +
+      `${String(dataset.days.length)} venue-days ` +
       `(${String(result.days.length)} fresh, ${String(carried)} carried), ` +
       `${String(truncated.theaters.length)} theaters, ${String(truncated.films.length)} films ` +
       `with upcoming showtimes, ${seconds}s`,
