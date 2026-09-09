@@ -1,12 +1,31 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ALIASES, loadDataset, renderDataset, type Dataset } from './dataset';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ALIASES,
+  loadDataset,
+  loadLedger,
+  renderDataset,
+  type Dataset,
+  type Ledger,
+} from './dataset';
 import { geocodeAnchor } from './geocode';
 import { chainIds, chainLabel } from '@core/core/chains.js';
+import { freshnessLine, sourceFailures } from '@core/core/freshness.js';
 import type { Coords } from '@core/core/geo.js';
+import { shortenTheater } from '@core/core/notes.js';
 import type { SortOrder } from '@core/core/types.js';
 import { DEFAULT_SECTION_OPTIONS } from '@core/core/sections.js';
-import { SECTIONS, SORT_ORDERS, useTablePrefs, type ViewFlags } from './tables';
+import {
+  COMING_ID,
+  MAIN_ID,
+  SECTIONS,
+  SORT_ORDERS,
+  VIEW_MODES,
+  useTablePrefs,
+  type ViewFlags,
+  type ViewMode,
+} from './tables';
 import { Menu, Section, Stepper, Word } from './controls';
+import { DayView, FilmTable, VenueView, type Row } from './views';
 import Subscribe from './Subscribe';
 
 /**
@@ -38,6 +57,15 @@ function placeName(zip: string): string {
 const DEFAULT_WINDOW_DAYS = 7;
 
 /**
+ * Distance the page opens at.
+ *
+ * The published run covers thirty-five miles so the drive-in and Boerne are
+ * there when asked for, but "what is playing" means the city, and a default
+ * that reaches Castroville answers a question nobody asked.
+ */
+const DEFAULT_RADIUS_MILES = 15;
+
+/**
  * The settings that change how a row reads, in menu order.
  *
  * Each one is off by default because each adds words to the Notes cell, and a
@@ -54,9 +82,16 @@ const VIEW_FLAGS: readonly [keyof ViewFlags, string, string][] = [
 
 /** What each sort order is for, shown beside its word. */
 const SORT_LABELS: Record<SortOrder, [string, string]> = {
-  reach: ['Widest first', 'Wide releases, then limited runs, then one-nighters'],
+  reach: ['Each table’s own order', 'Screenings by date, wide releases by reach'],
   title: ['By title', 'Alphabetical, for looking one film up'],
-  soonest: ['Soonest first', 'Earliest date first, for tonight'],
+  soonest: ['Soonest first', 'Earliest date first, everywhere'],
+};
+
+/** How the page is grouped, and what each grouping answers. */
+const VIEW_LABELS: Record<ViewMode, [string, string]> = {
+  film: ['By film', 'One row per film, grouped into tables'],
+  day: ['By day', 'Every date, with what plays that day and when'],
+  venue: ['By venue', 'Every theater in range, nearest first'],
 };
 
 /** Today in the market's timezone, which is the only window that makes sense as a default. */
@@ -76,112 +111,36 @@ function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/**
- * Compact a run of ISO dates: `["2026-08-04","2026-08-05"]` -> `"Aug 4, 5"`.
- * The full list overflows the row once six pages are in flight.
- */
-function compactDates(dates: readonly string[]): string {
-  const parts = dates
-    .map((d) => /^(\d{4})-(\d{2})-(\d{2})$/.exec(d))
-    .filter((m): m is RegExpExecArray => m !== null)
-    .map((m) => ({ month: Number(m[2]), day: Number(m[3]) }));
-  if (parts.length === 0) return dates.join(', ');
-
-  const monthName = (month: number): string =>
-    new Date(Date.UTC(2000, month - 1, 1)).toLocaleDateString('en-US', {
-      month: 'short',
-      timeZone: 'UTC',
-    });
-
-  const out: string[] = [];
-  let lastMonth = -1;
-  for (const { month, day } of parts) {
-    out.push(month === lastMonth ? String(day) : `${monthName(month)} ${String(day)}`);
-    lastMonth = month;
-  }
-  return out.join(', ');
-}
-
-/** "2 theaters · 1 day" — the reach numbers behind each Notes cell. */
-function reach(theaters: number, dates: number): string {
-  const t = `${String(theaters)} theater${theaters === 1 ? '' : 's'}`;
-  const d = `${String(dates)} day${dates === 1 ? '' : 's'}`;
-  return `${t} · ${d}`;
-}
-
-interface Row {
-  readonly title: string;
-  readonly url: string;
-  readonly links: readonly { readonly url: string; readonly label: string }[];
-  readonly notes: string;
-  readonly theaterCount: number;
-  readonly dateCount: number;
-  readonly section: string;
-  readonly sectionHeading: string | null;
-  readonly theaters: readonly string[];
-  readonly dates: readonly string[];
-}
-
-/** One listing, rendered the same whichever table it lands in. */
-function movieRow(row: Row): React.JSX.Element {
-  return (
-    <tr key={`${row.section}:${row.url}`}>
-      <td className="title">
-        <a href={row.url} target="_blank" rel="noreferrer">
-          {row.title}
-        </a>
-        {row.links.length > 0 && (
-          <span className="title__links">
-            {row.links.map((link) => (
-              <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
-                {link.label}
-              </a>
-            ))}
-          </span>
-        )}
-      </td>
-      <td className="notes">{row.notes}</td>
-      <td className="reach" tabIndex={0}>
-        {reach(row.theaterCount, row.dateCount)}
-        <span className="reach__detail" role="tooltip">
-          <span className="reach__heading">{row.theaterCount === 1 ? 'Theater' : 'Theaters'}</span>
-          <span className="reach__list">{row.theaters.join(', ')}</span>
-          <span className="reach__heading">{row.dateCount === 1 ? 'Date' : 'Dates'}</span>
-          <span className="reach__list">{compactDates(row.dates)}</span>
-        </span>
-      </td>
-    </tr>
-  );
-}
-
 export default function App(): React.JSX.Element {
   const start = today();
   const [from, setFrom] = useState(start);
   const [to, setTo] = useState(addDays(start, DEFAULT_WINDOW_DAYS - 1));
-  const [radius, setRadius] = useState(15);
+  const [radius, setRadius] = useState(DEFAULT_RADIUS_MILES);
   const [excludedChains, setExcludedChains] = useState<string[]>([]);
   const [anchorText, setAnchorText] = useState('');
   const [anchor, setAnchor] = useState<Coords | null>(null);
   const [anchorState, setAnchorState] = useState<'idle' | 'looking' | 'failed'>('idle');
 
-  const { tables, flags, sort, setTable, setFlag, setSort } = useTablePrefs();
+  const { tables, flags, sort, view, setTable, setFlag, setSort, setView, isOpen, setOpen } =
+    useTablePrefs();
   const [dataset, setDataset] = useState<Dataset | null>(null);
+  const [ledger, setLedger] = useState<Ledger | null>(null);
   const [datasetState, setDatasetState] = useState<'loading' | 'ready' | 'failed'>('loading');
-  const seededRadius = useRef(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
-  const [openSections, setOpenSections] = useState<ReadonlySet<string>>(new Set());
 
   // The site has no API: it reads whatever the scheduled scrape published and
-  // filters that in the browser.
+  // filters that in the browser. The ledger is optional — the tables render
+  // without it, they just judge openings less sharply.
   useEffect(() => {
-    void loadDataset().then((d) => {
+    void Promise.all([loadDataset(), loadLedger()]).then(([d, l]) => {
       if (!d) {
         setDatasetState('failed');
         return;
       }
       setDataset(d);
+      setLedger(l);
       setDatasetState('ready');
       const first = start < d.from ? d.from : start > d.to ? d.to : start;
       setFrom(first);
@@ -192,14 +151,6 @@ export default function App(): React.JSX.Element {
       );
     });
   }, [start]);
-
-  // The radius can only narrow what the published run covered, so the
-  // dataset's own reach is the honest starting point.
-  useEffect(() => {
-    if (!dataset || seededRadius.current) return;
-    seededRadius.current = true;
-    setRadius(dataset.radiusMiles);
-  }, [dataset]);
 
   // Anchors are resolved in the browser, and the debounce keeps a typed
   // address from firing a lookup per keystroke.
@@ -230,11 +181,12 @@ export default function App(): React.JSX.Element {
   // data, and the wider number would promise coverage the dataset lacks.
   const effectiveRadius = Math.min(radius, dataset?.radiusMiles ?? radius);
 
-  const view = useMemo(() => {
+  const rendered = useMemo(() => {
     if (!dataset) return null;
     try {
       return renderDataset(
         dataset,
+        ledger,
         from,
         to,
         { radiusMiles: effectiveRadius, excludedChains: new Set(excludedChains), anchor },
@@ -257,30 +209,30 @@ export default function App(): React.JSX.Element {
     } catch {
       return null;
     }
-  }, [dataset, from, to, effectiveRadius, tables, flags, sort, excludedChains, anchor]);
+  }, [dataset, ledger, from, to, effectiveRadius, tables, flags, sort, excludedChains, anchor]);
 
-  const rows = useMemo(
+  const short = useCallback((name: string) => shortenTheater(name, ALIASES.theaterNames), []);
+
+  const rows: Row[] = useMemo(
     () =>
-      (view?.rows ?? []).map((r) => ({
+      (rendered?.rows ?? []).map((r) => ({
+        movie: r.movie,
         title: r.movie.title,
         url: r.url,
         links: r.links,
         notes: r.notes,
-        theaterCount: r.movie.theaters.length,
-        dateCount: r.movie.dates.length,
-        section: r.section ?? 'main',
+        section: r.section ?? MAIN_ID,
         sectionHeading: r.sectionHeading ?? null,
-        theaters: r.movie.theaters.map((t) => ALIASES.theaterNames[t] ?? t),
-        dates: [...r.movie.dates],
+        theaters: r.movie.theaters.map(short),
       })),
-    [view],
+    [rendered, short],
   );
 
   const copy = useCallback(() => {
-    if (!view) return;
+    if (!rendered) return;
     setCopyState('idle');
     void navigator.clipboard
-      .writeText(view.markdown)
+      .writeText(rendered.markdown)
       .then(() => {
         setCopyState('copied');
         setTimeout(() => {
@@ -290,60 +242,74 @@ export default function App(): React.JSX.Element {
       .catch(() => {
         setCopyState('failed');
       });
-  }, [view]);
+  }, [rendered]);
 
   /**
-   * The main table and the broken-out tables, kept apart.
+   * The tables in render order, each with its own heading and count.
    *
-   * The renderer hands back one flat list tagged by section; this splits it
-   * so each extra table can fold behind its own header while the main one
-   * stays open.
+   * The renderer hands back one flat list tagged by section; the main table is
+   * one of them rather than a special case, because the wide releases are what
+   * folds away now and the screenings are what leads.
    */
-  const grouped = useMemo(() => {
-    const main = rows.filter((row) => row.section === 'main');
+  const sections = useMemo(() => {
     const order: string[] = [];
-    const bySection = new Map<string, { heading: string; rows: typeof main }>();
+    const bySection = new Map<string, { heading: string; rows: Row[] }>();
     for (const row of rows) {
-      if (row.section === 'main') continue;
       let entry = bySection.get(row.section);
       if (!entry) {
-        entry = { heading: row.sectionHeading ?? row.section, rows: [] };
+        entry = {
+          heading:
+            row.sectionHeading ?? (row.section === MAIN_ID ? 'Everything else' : row.section),
+          rows: [],
+        };
         bySection.set(row.section, entry);
         order.push(row.section);
       }
       entry.rows.push(row);
     }
-    return {
-      main,
-      sections: order.map((id) => {
-        const entry = bySection.get(id);
-        return { id, heading: entry?.heading ?? id, rows: entry?.rows ?? [] };
-      }),
-    };
+    // The main table renders last: it is the long tail of wide releases, and
+    // what changed this week is the reason to open the page.
+    const ids = [...order.filter((id) => id !== MAIN_ID), ...order.filter((id) => id === MAIN_ID)];
+    return ids.map((id) => {
+      const entry = bySection.get(id);
+      return { id, heading: entry?.heading ?? id, rows: entry?.rows ?? [] };
+    });
   }, [rows]);
+
+  /**
+   * The rows in reading order, tables first and the wide releases last.
+   *
+   * The day and venue views group these again by date or theater, and they
+   * want the same order: a one-night booking is the reason to look at a day,
+   * and the twelfth multiplex listing is not.
+   */
+  const orderedRows = useMemo(() => sections.flatMap((s) => s.rows), [sections]);
 
   /** How many view flags are on, so the shut menu says whether it holds any. */
   const activeFlags = VIEW_FLAGS.filter(([key]) => flags[key]).length;
 
-  const toggleSection = useCallback((id: string) => {
-    setOpenSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const toggleSection = useCallback(
+    (id: string) => {
+      setOpen(id, !isOpen(id));
+    },
+    [isOpen, setOpen],
+  );
 
   const summary = useMemo(() => {
-    if (!view) return '';
+    if (!rendered) return '';
     // Rows can repeat across tables, so count distinct films rather than rows.
-    const titles = new Set(rows.map((r) => r.title));
-    const movies = `${String(titles.size)} movie${titles.size === 1 ? '' : 's'}`;
-    const theaters = `${String(view.theaters.length)} theater${view.theaters.length === 1 ? '' : 's'}`;
+    // Next week's listings are left out: the theater count beside this one is
+    // the window's, and the two must describe the same thing.
+    const films = new Set(rows.filter((r) => r.section !== COMING_ID).map((r) => r.movie.key));
+    const movies = `${String(films.size)} movie${films.size === 1 ? '' : 's'}`;
+    const count = rendered.theaters.length;
     // No distance here: the drive-in and library tables are radius-exempt, so
     // the furthest venue would contradict the miles field beside it.
-    return `${movies} · ${theaters}`;
-  }, [view, rows]);
+    return `${movies} · ${count} theater${count === 1 ? '' : 's'}`;
+  }, [rendered, rows]);
+
+  const freshness = useMemo(() => (dataset ? freshnessLine(dataset, new Date()) : ''), [dataset]);
+  const failures = useMemo(() => (dataset ? sourceFailures(dataset) : []), [dataset]);
 
   return (
     <main>
@@ -397,6 +363,20 @@ export default function App(): React.JSX.Element {
             }}
           />
         </label>
+
+        <Menu label="view" count={VIEW_LABELS[view][0].toLowerCase().replace('by ', '')}>
+          {VIEW_MODES.map((mode) => (
+            <Word
+              key={mode}
+              on={view === mode}
+              label={VIEW_LABELS[mode][0]}
+              hint={VIEW_LABELS[mode][1]}
+              onToggle={() => {
+                setView(mode);
+              }}
+            />
+          ))}
+        </Menu>
 
         {/* Each group is its own menu, anchored to its button, so opening one
             never moves the table underneath. */}
@@ -487,15 +467,15 @@ export default function App(): React.JSX.Element {
       )}
       {/* Venues scraped before coordinates were stored cannot be re-measured,
           so their mileage still refers to the ZIP. */}
-      {anchor && (view?.unanchored.length ?? 0) > 0 && (
+      {anchor && (rendered?.unanchored.length ?? 0) > 0 && (
         <p className="status">
-          Measured from the ZIP, not the anchor: {(view?.unanchored ?? []).join(', ')}.
+          Measured from the ZIP, not the anchor: {(rendered?.unanchored ?? []).join(', ')}.
         </p>
       )}
 
       {invalidRange && <p className="status error">“To” is before “from”.</p>}
 
-      {rows.length === 0 && dataset && !invalidRange && view && (
+      {rows.length === 0 && dataset && !invalidRange && rendered && (
         <p className="empty">
           Nothing playing in that window within {effectiveRadius} miles of{' '}
           {anchor ? anchorText.trim() : placeName(dataset.zip)}.
@@ -508,11 +488,11 @@ export default function App(): React.JSX.Element {
         <p className="empty">Listings could not be loaded. Reload the page to try again.</p>
       )}
 
-      {dataset && !invalidRange && !view && (
+      {dataset && !invalidRange && !rendered && (
         <p className="empty error">The published listings could not be read.</p>
       )}
 
-      {view && rows.length > 0 && (
+      {rendered && rows.length > 0 && (
         <>
           <div className="summary">
             <span>{summary}</span>
@@ -535,61 +515,55 @@ export default function App(): React.JSX.Element {
             </span>
           </div>
 
-          {/* Open on the page rather than behind a disclosure: what is not on
-              sale yet changes what a reader does with the table, and a note
-              worth acting on should not need a click to find. */}
-          {view.warnings.length > 0 && (
-            <aside className="warning">
-              {view.warnings.map((warning) => (
-                <p key={warning}>{warning}</p>
-              ))}
-            </aside>
-          )}
+          {/* Open on the page rather than behind a disclosure: how old the
+              listings are, and what is not on sale yet, both change what a
+              reader does with the table. */}
+          <aside className="warning">
+            <p className="warning__age">{freshness}</p>
+            {failures.map((failure) => (
+              <p key={failure}>{failure}</p>
+            ))}
+            {rendered.warnings.map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+          </aside>
 
           {showMarkdown ? (
-            <pre>{view.markdown}</pre>
+            <pre>{rendered.markdown}</pre>
+          ) : view === 'day' ? (
+            <DayView
+              rows={orderedRows}
+              dates={rendered.dates}
+              short={short}
+              isOpen={isOpen}
+              toggle={toggleSection}
+            />
+          ) : view === 'venue' ? (
+            <VenueView
+              rows={orderedRows}
+              theaters={rendered.theaters}
+              dates={rendered.dates}
+              isOpen={isOpen}
+              toggle={toggleSection}
+            />
           ) : (
-            <>
-              <table>
-                <thead>
-                  <tr>
-                    <th className="title">movie</th>
-                    <th>notes</th>
-                    <th className="reach">reach</th>
-                  </tr>
-                </thead>
-                <tbody>{grouped.main.map(movieRow)}</tbody>
-              </table>
-
-              {/* Everything else folds to a header carrying its own count:
-                  this week is the product, the rest is one click away. */}
-              {grouped.sections.length > 0 && (
-                <div className="sections">
-                  {grouped.sections.map((section) => (
-                    <Section
-                      key={section.id}
-                      heading={section.heading}
-                      count={section.rows.length}
-                      open={openSections.has(section.id)}
-                      onToggle={() => {
-                        toggleSection(section.id);
-                      }}
-                    >
-                      <table>
-                        <thead className="sr-only">
-                          <tr>
-                            <th>movie</th>
-                            <th>notes</th>
-                            <th>reach</th>
-                          </tr>
-                        </thead>
-                        <tbody>{section.rows.map(movieRow)}</tbody>
-                      </table>
-                    </Section>
-                  ))}
-                </div>
-              )}
-            </>
+            /* Every table folds to a header carrying its own count, the wide
+               releases included: what changed this week is the product. */
+            <div className="sections">
+              {sections.map((section) => (
+                <Section
+                  key={section.id}
+                  heading={section.heading}
+                  count={section.rows.length}
+                  open={isOpen(section.id)}
+                  onToggle={() => {
+                    toggleSection(section.id);
+                  }}
+                >
+                  <FilmTable rows={section.rows} hideHead />
+                </Section>
+              ))}
+            </div>
           )}
         </>
       )}

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { DEFAULT_TABLE_IDS, SECTIONS, knownTables } from '@core/core/sections.js';
+import { DEFAULT_TABLE_IDS, SECTION_BY_ID, SECTIONS, knownTables } from '@core/core/sections.js';
 import type { SortOrder } from '@core/core/types.js';
 
 export { SECTIONS };
@@ -18,6 +18,27 @@ const KEY = 'filmscraper.tables.v1';
 const FOREIGN_ID = 'foreign';
 
 export const SORT_ORDERS: readonly SortOrder[] = ['reach', 'title', 'soonest'];
+
+/** How the rows are grouped on the page. */
+export type ViewMode = 'film' | 'day' | 'venue';
+export const VIEW_MODES: readonly ViewMode[] = ['film', 'day', 'venue'];
+
+/** The main table's id in the open-state record. */
+export const MAIN_ID = 'main';
+
+/** The one table whose rows fall outside the chosen window. */
+export const COMING_ID = 'coming';
+
+/**
+ * Whether a table starts unfolded.
+ *
+ * This week's tables do; the wide releases and next week's listings start
+ * shut behind their own counts. A day or a venue is always worth opening.
+ */
+function opensByDefault(id: string): boolean {
+  if (id === MAIN_ID) return false;
+  return SECTION_BY_ID.get(id)?.defaultOpen ?? true;
+}
 
 /**
  * Settings that change how a row reads rather than which table it lands in.
@@ -56,7 +77,21 @@ interface StoredTables {
   readonly off: readonly string[];
   readonly flags: ViewFlags;
   readonly sort: SortOrder;
+  readonly view: ViewMode;
+  /** Sections explicitly unfolded or folded; anything else takes its default. */
+  readonly opened: readonly string[];
+  readonly closed: readonly string[];
 }
+
+const EMPTY: StoredTables = {
+  on: [],
+  off: [],
+  flags: DEFAULT_FLAGS,
+  sort: 'reach',
+  view: 'film',
+  opened: [],
+  closed: [],
+};
 
 function read(): StoredTables | null {
   try {
@@ -82,6 +117,9 @@ function read(): StoredTables | null {
         hideSingle: flag('hideSingle'),
       },
       sort: SORT_ORDERS.includes(record.sort as SortOrder) ? (record.sort as SortOrder) : 'reach',
+      view: VIEW_MODES.includes(record.view as ViewMode) ? (record.view as ViewMode) : 'film',
+      opened: ids(record.opened),
+      closed: ids(record.closed),
     };
   } catch {
     // A private-mode browser or a hand-edited entry: the defaults are a
@@ -114,13 +152,31 @@ function resolve(stored: StoredTables | null): string[] {
   );
 }
 
+/** Add to one decision list and drop from its opposite. */
+function decide(
+  yes: readonly string[],
+  no: readonly string[],
+  id: string,
+  value: boolean,
+): [string[], string[]] {
+  return [
+    value ? [...new Set([...yes, id])] : yes.filter((x) => x !== id),
+    value ? no.filter((x) => x !== id) : [...new Set([...no, id])],
+  ];
+}
+
 export interface TablePrefs {
   readonly tables: string[];
   readonly flags: ViewFlags;
   readonly sort: SortOrder;
+  readonly view: ViewMode;
   readonly setTable: (id: string, enabled: boolean) => void;
   readonly setFlag: (key: keyof ViewFlags, value: boolean) => void;
   readonly setSort: (order: SortOrder) => void;
+  readonly setView: (view: ViewMode) => void;
+  /** Whether a section is unfolded; everything but the main table is by default. */
+  readonly isOpen: (id: string) => boolean;
+  readonly setOpen: (id: string, open: boolean) => void;
 }
 
 /** The table checklist, remembered across visits. */
@@ -131,58 +187,87 @@ export function useTablePrefs(): TablePrefs {
   // every render would re-run it on every keystroke and every progress tick.
   const tables = useMemo(() => knownTables(resolve(stored)), [stored]);
 
-  const setTable = useCallback((id: string, enabled: boolean) => {
+  const update = useCallback((change: (base: StoredTables) => StoredTables) => {
     setStored((prev) => {
-      const base = prev ?? { on: [], off: [], flags: DEFAULT_FLAGS, sort: 'reach' as SortOrder };
-      const next: StoredTables = {
-        ...base,
-        on: enabled ? [...new Set([...base.on, id])] : base.on.filter((x) => x !== id),
-        off: enabled ? base.off.filter((x) => x !== id) : [...new Set([...base.off, id])],
+      const next = change(prev ?? EMPTY);
+      write(next);
+      return next;
+    });
+  }, []);
+
+  const setTable = useCallback(
+    (id: string, enabled: boolean) => {
+      update((base) => {
+        const [on, off] = decide(base.on, base.off, id, enabled);
         // Asking for the table means wanting to see those films, which is the
         // opposite of dropping them. Left to contradict each other, the pair
         // produces a "Not in English" table that can never have a row in it.
-        flags:
-          enabled && id === FOREIGN_ID
-            ? { ...base.flags, excludeForeign: false }
-            : base.flags,
-      };
-      write(next);
-      return next;
-    });
-  }, []);
+        const flags =
+          enabled && id === FOREIGN_ID ? { ...base.flags, excludeForeign: false } : base.flags;
+        return { ...base, on, off, flags };
+      });
+    },
+    [update],
+  );
 
-  const setFlag = useCallback((key: keyof ViewFlags, value: boolean) => {
-    setStored((prev) => {
-      const base = prev ?? { on: [], off: [], flags: DEFAULT_FLAGS, sort: 'reach' as SortOrder };
-      const drops = key === 'excludeForeign' && value;
-      // Dropping the films takes their table with it, visibly: the word goes
-      // struck through in the same menu rather than the table just vanishing.
-      const next: StoredTables = {
-        ...base,
-        on: drops ? base.on.filter((x) => x !== FOREIGN_ID) : base.on,
-        off: drops ? [...new Set([...base.off, FOREIGN_ID])] : base.off,
-        flags: { ...base.flags, [key]: value },
-      };
-      write(next);
-      return next;
-    });
-  }, []);
+  const setFlag = useCallback(
+    (key: keyof ViewFlags, value: boolean) => {
+      update((base) => {
+        const drops = key === 'excludeForeign' && value;
+        // Dropping the films takes their table with it, visibly: the word goes
+        // struck through in the same menu rather than the table just vanishing.
+        const [on, off] = drops
+          ? decide(base.on, base.off, FOREIGN_ID, false)
+          : [base.on, base.off];
+        return { ...base, on, off, flags: { ...base.flags, [key]: value } };
+      });
+    },
+    [update],
+  );
 
-  const setSort = useCallback((order: SortOrder) => {
-    setStored((prev) => {
-      const base = prev ?? { on: [], off: [], flags: DEFAULT_FLAGS, sort: 'reach' as SortOrder };
-      const next: StoredTables = { ...base, sort: order };
-      write(next);
-      return next;
-    });
-  }, []);
+  const setSort = useCallback(
+    (order: SortOrder) => {
+      update((base) => ({ ...base, sort: order }));
+    },
+    [update],
+  );
+
+  const setView = useCallback(
+    (view: ViewMode) => {
+      update((base) => ({ ...base, view }));
+    },
+    [update],
+  );
+
+  const setOpen = useCallback(
+    (id: string, open: boolean) => {
+      update((base) => {
+        const [opened, closed] = decide(base.opened, base.closed, id, open);
+        return { ...base, opened, closed };
+      });
+    },
+    [update],
+  );
+
+  const isOpen = useCallback(
+    (id: string): boolean => {
+      if (stored?.opened.includes(id)) return true;
+      if (stored?.closed.includes(id)) return false;
+      return opensByDefault(id);
+    },
+    [stored],
+  );
 
   return {
     tables,
     flags: stored?.flags ?? DEFAULT_FLAGS,
     sort: stored?.sort ?? 'reach',
+    view: stored?.view ?? 'film',
     setTable,
     setFlag,
     setSort,
+    setView,
+    isOpen,
+    setOpen,
   };
 }

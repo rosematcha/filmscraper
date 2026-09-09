@@ -592,6 +592,67 @@ pre {
   border-bottom: 0;
 }
 
+/* The day and venue views answer a narrower question, so the second column
+   carries times rather than a description of the run. */
+.detail {
+  font-variant-numeric: tabular-nums;
+}
+
+/* How old the listings are leads the note block: everything below it is only
+   worth reading once you know when it was true. */
+.warning__age {
+  color: var(--faint);
+}
+
+/* --- narrow screens ---
+   The reach column is a hover panel and a set of counts, neither of which a
+   phone can use, so it goes and the title gets the room. */
+
+@media (max-width: 40rem) {
+  main {
+    padding: 1.5rem 1rem 4rem;
+  }
+
+  form {
+    gap: 0.5rem 0.9rem;
+  }
+
+  .anchor input[type='text'] {
+    width: 100%;
+  }
+
+  .title {
+    width: auto;
+  }
+
+  th.reach,
+  td.reach {
+    display: none;
+  }
+
+  /* Notes carry the value, so they get their own line rather than a column
+     three words wide. */
+  tbody tr {
+    display: block;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  tbody td {
+    display: block;
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .notes {
+    margin-top: 0.15rem;
+  }
+
+  .summary {
+    flex-wrap: wrap;
+  }
+}
+
 /* --- footer --- */
 
 footer {
