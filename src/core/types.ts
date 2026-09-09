@@ -135,6 +135,17 @@ export interface TicketLink {
   readonly href: string;
 }
 
+/** A venue's live showtimes for one film on one date. */
+export interface Screening {
+  readonly date: IsoDate;
+  readonly theater: string;
+  readonly times: readonly string[];
+  readonly formats: readonly string[];
+  readonly details: readonly string[];
+  readonly admission?: Admission;
+  readonly href: string;
+}
+
 /** One movie aggregated across every theater and date in the window. */
 export interface AggregatedMovie {
   /** Stable key used for merging; derived from the normalized title. */
@@ -211,6 +222,8 @@ export interface AggregatedMovie {
    * where Cinemark's page cannot sell an AMC seat.
    */
   readonly ticketLinks: readonly TicketLink[];
+  /** Screening-level details for interactive consumers such as the web app. */
+  readonly screenings?: readonly Screening[];
 }
 
 export interface ScrapeWarning {

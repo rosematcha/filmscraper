@@ -75,6 +75,56 @@ main {
   padding: 3rem 1.5rem 6rem;
 }
 
+.hero {
+  margin-bottom: 1.25rem;
+}
+
+.hero__kicker {
+  margin: 0 0 0.25rem;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: clamp(2rem, 5vw, 3.6rem);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.hero__lede {
+  margin: 0.7rem 0 0;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.date-presets {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 1.25rem;
+}
+
+.date-presets button {
+  color: var(--muted);
+  background: var(--field);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.date-presets button:hover,
+.date-presets button.active {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+
 h1 {
   margin: 0 0 2rem;
   font-size: 0.8125rem;
@@ -109,7 +159,9 @@ label {
 
 input[type='text'],
 input[type='date'],
-input[type='number'] {
+input[type='number'],
+input[type='search'],
+select {
   font: inherit;
   font-size: 0.8125rem;
   color: var(--ink);
@@ -120,6 +172,14 @@ input[type='number'] {
   padding: 0.1rem 0.1rem 0.15rem;
 }
 
+select {
+  appearance: none;
+  background: var(--field);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.22rem 1.5rem 0.22rem 0.45rem;
+}
+
 input:focus {
   outline: none;
   border-bottom-color: var(--ink);
@@ -127,6 +187,10 @@ input:focus {
 
 input[type='text'] {
   width: 6rem;
+}
+
+input[type='search'] {
+  width: 12rem;
 }
 
 /* The spinner is the ugliest control the platform ships; the stepper below
@@ -354,6 +418,38 @@ th:last-child {
   font-size: 0.875rem;
 }
 
+.showtimes {
+  width: 30%;
+  color: var(--ink);
+  font-size: 0.8125rem;
+}
+
+.showtimes__list {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.showtimes__list a {
+  display: block;
+  color: var(--link);
+  text-decoration: none;
+}
+
+.showtimes__list a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.showtimes__theater {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.muted {
+  color: var(--faint);
+}
+
 .reach {
   width: 7rem;
   color: var(--faint);
@@ -427,6 +523,71 @@ pre {
   font-size: 0.75rem;
   line-height: 1.6;
   overflow-x: auto;
+}
+
+@media (max-width: 760px) {
+  main {
+    padding: 2rem 1rem 4rem;
+  }
+
+  form {
+    gap: 0.65rem 0.85rem;
+  }
+
+  .find {
+    flex-basis: 100%;
+  }
+
+  input[type='search'] {
+    width: min(18rem, 70vw);
+  }
+
+  table,
+  tbody,
+  tr,
+  td {
+    display: block;
+  }
+
+  thead {
+    display: none;
+  }
+
+  tr {
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  td {
+    width: auto;
+    padding: 0;
+    border: 0;
+  }
+
+  .title {
+    margin-bottom: 0.35rem;
+    width: auto;
+    font-size: 1rem;
+  }
+
+  .showtimes {
+    width: auto;
+    margin-bottom: 0.35rem;
+  }
+
+  .notes {
+    margin-bottom: 0.35rem;
+  }
+
+  .reach {
+    width: auto;
+    font-size: 0.75rem;
+  }
+
+  .reach__detail {
+    left: 0;
+    right: auto;
+  }
 }
 
 .empty {
