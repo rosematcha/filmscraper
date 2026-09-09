@@ -81,6 +81,7 @@ describe('restorePublishedData', () => {
     const ledger = {
       version: 1,
       updatedAt: generatedAt,
+      since: '2026-08-01',
       films: {
         x: {
           title: 'X',

@@ -175,7 +175,10 @@ function toRow(
   upcoming: boolean,
 ): SortedMovie {
   const frontier = window.frontier ?? result.horizon;
-  const extras = { firstDate: result.firstDates?.get(movie.key) ?? null };
+  const extras = {
+    firstDate: result.firstDates?.get(movie.key) ?? null,
+    watchedSince: result.watchedSince ?? null,
+  };
   const notes = upcoming
     ? upcomingNotes(movie, theaterNames)
     : buildNotes(
@@ -218,6 +221,7 @@ function renderSections(
   const sections = buildSections(result.movies, sectionOptions, window, {
     ...(result.upcoming ? { upcoming: result.upcoming } : {}),
     ...(result.firstDates ? { firstDateOf } : {}),
+    watchedSince: result.watchedSince ?? null,
   });
   return sections.map((section) => {
     const upcoming = SECTION_BY_ID.get(section.id)?.mode === 'upcoming';

@@ -269,4 +269,6 @@ export interface ScrapeResult {
    * runs. Absent when no ledger has been published yet.
    */
   readonly firstDates?: ReadonlyMap<string, IsoDate>;
+  /** Earliest date the ledger covers, which bounds what `firstDates` can prove. */
+  readonly watchedSince?: IsoDate | null;
 }

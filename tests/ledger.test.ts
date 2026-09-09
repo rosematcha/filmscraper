@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { firstDates, isLedger, LEDGER_VERSION, updateLedger } from '../src/core/ledger.js';
+import {
+  firstDates,
+  isLedger,
+  LEDGER_VERSION,
+  updateLedger,
+  watchedSince,
+} from '../src/core/ledger.js';
 import type { AggregatedMovie } from '../src/core/types.js';
 
 const film = (key: string, dates: string[]): AggregatedMovie => ({
@@ -76,14 +82,33 @@ describe('updateLedger', () => {
   });
 });
 
+describe('how far back the ledger reaches', () => {
+  it('remembers the earliest run day it ever folded in', () => {
+    const first = updateLedger(null, [film('x', ['2026-09-08'])], '2026-09-08', NOW);
+    expect(first.since).toBe('2026-09-08');
+    const earlier = updateLedger(first, [film('x', ['2026-09-01'])], '2026-09-01', NOW);
+    expect(earlier.since).toBe('2026-09-01');
+    const later = updateLedger(earlier, [film('x', ['2026-09-15'])], '2026-09-15', NOW);
+    expect(later.since).toBe('2026-09-01');
+  });
+
+  it('reports its reach only once it has one', () => {
+    expect(watchedSince(null)).toBeNull();
+    expect(watchedSince(updateLedger(null, [film('x', ['2026-09-08'])], '2026-09-08', NOW))).toBe(
+      '2026-09-08',
+    );
+  });
+});
+
 describe('isLedger', () => {
   it('accepts what updateLedger writes and rejects the rest', () => {
     const ledger = updateLedger(null, [film('x', ['2026-09-08'])], '2026-09-08', NOW);
     expect(isLedger(JSON.parse(JSON.stringify(ledger)))).toBe(true);
-    expect(isLedger({ version: 0, updatedAt: '', films: {} })).toBe(false);
-    expect(isLedger({ version: LEDGER_VERSION, updatedAt: '', films: { x: { title: 'x' } } })).toBe(
-      false,
-    );
+    expect(isLedger({ version: 0, updatedAt: '', since: '', films: {} })).toBe(false);
+    expect(isLedger({ version: LEDGER_VERSION, updatedAt: '', films: {} })).toBe(false);
+    expect(
+      isLedger({ version: LEDGER_VERSION, updatedAt: '', since: '', films: { x: { title: 'x' } } }),
+    ).toBe(false);
     expect(isLedger(null)).toBe(false);
   });
 });

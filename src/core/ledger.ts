@@ -37,10 +37,23 @@ export interface LedgerEntry {
 export interface Ledger {
   readonly version: number;
   readonly updatedAt: string;
+  /**
+   * The first day a run was ever folded in.
+   *
+   * Without it the ledger cannot tell "this film opened on the 8th" from "the
+   * 8th is simply the earliest day we ever looked", and a first-ever ledger
+   * would report every film in the market as opening that week.
+   */
+  readonly since: IsoDate;
   readonly films: Readonly<Record<string, LedgerEntry>>;
 }
 
-export const EMPTY_LEDGER: Ledger = { version: LEDGER_VERSION, updatedAt: '', films: {} };
+export const EMPTY_LEDGER: Ledger = {
+  version: LEDGER_VERSION,
+  updatedAt: '',
+  since: '',
+  films: {},
+};
 
 function isEntry(value: unknown): value is LedgerEntry {
   if (typeof value !== 'object' || value === null) return false;
@@ -58,6 +71,7 @@ export function isLedger(value: unknown): value is Ledger {
   if (typeof value !== 'object' || value === null) return false;
   const d = value as Record<string, unknown>;
   if (d['version'] !== LEDGER_VERSION || typeof d['updatedAt'] !== 'string') return false;
+  if (typeof d['since'] !== 'string') return false;
   const films = d['films'];
   if (typeof films !== 'object' || films === null) return false;
   return Object.values(films).every(isEntry);
@@ -108,7 +122,9 @@ export function updateLedger(
           lastSeen: runDay,
         };
   }
-  return { version: LEDGER_VERSION, updatedAt: now.toISOString(), films };
+  const priorSince = previous?.since ?? '';
+  const since = priorSince !== '' && priorSince < runDay ? priorSince : runDay;
+  return { version: LEDGER_VERSION, updatedAt: now.toISOString(), since, films };
 }
 
 /** Film key -> first listed date, in the shape the renderer takes. */
@@ -116,4 +132,10 @@ export function firstDates(ledger: Ledger | null): ReadonlyMap<string, IsoDate> 
   const out = new Map<string, IsoDate>();
   for (const [key, entry] of Object.entries(ledger?.films ?? {})) out.set(key, entry.firstDate);
   return out;
+}
+
+/** The earliest date the ledger can speak to, or null when there is none. */
+export function watchedSince(ledger: Ledger | null): IsoDate | null {
+  const since = ledger?.since ?? '';
+  return since === '' ? null : since;
 }

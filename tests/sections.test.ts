@@ -650,13 +650,27 @@ describe('coming soon and the ledger', () => {
     const all = film('Opened Friday', week);
     const opened = buildSections([all], only('opens'), window, {
       firstDateOf: () => '2026-08-03',
+      watchedSince: '2026-07-01',
     });
     expect(titles(opened, 'opens')).toEqual(['Opened Friday']);
     const running = buildSections([all], only('opens'), window, {
       firstDateOf: () => '2026-07-20',
+      watchedSince: '2026-07-01',
     });
     expect(titles(running, 'opens')).toEqual([]);
     expect(titles(running, 'main')).toEqual(['Opened Friday']);
+  });
+
+  it('opens nothing on a ledger that started the same day it first saw the film', () => {
+    // Otherwise the first run after a fresh ledger reports the entire market
+    // as opening this week.
+    const all = film('Already Running', week);
+    const sections = buildSections([all], only('opens'), window, {
+      firstDateOf: () => '2026-08-03',
+      watchedSince: '2026-08-03',
+    });
+    expect(titles(sections, 'opens')).toEqual([]);
+    expect(titles(sections, 'main')).toEqual(['Already Running']);
   });
 
   it('keeps a fixture out of every timing table', () => {

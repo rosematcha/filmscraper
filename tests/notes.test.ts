@@ -194,6 +194,32 @@ describe('timed bookings', () => {
   it('names each venue with its own time when they differ', () => {
     const m = movie({
       theaters: [LIVE_OAK, PALLADIUM],
+      dates: ['2026-08-05'],
+      showings: [
+        showing('2026-08-05', LIVE_OAK, ['7:00p']),
+        showing('2026-08-05', PALLADIUM, ['9:15p']),
+      ],
+    });
+    expect(notes(m, week)).toBe('Wednesday at Regal Live Oak (7:00p) and Palladium (9:15p)');
+  });
+
+  it('spells out two nights at one venue', () => {
+    const m = movie({
+      theaters: [PALLADIUM],
+      dates: ['2026-08-05', '2026-08-08'],
+      showings: [
+        showing('2026-08-05', PALLADIUM, ['9:15p']),
+        showing('2026-08-08', PALLADIUM, ['2:00p']),
+      ],
+    });
+    // The venue is named once, at the end, rather than after every night.
+    expect(notes(m, week)).toBe('Wednesday 9:15p and Saturday 2:00p at Palladium');
+  });
+
+  it('gives up once the booking needs more than a couple of time lists', () => {
+    // Two nights at two venues is four bracketed lists, which nobody reads.
+    const m = movie({
+      theaters: [LIVE_OAK, PALLADIUM],
       dates: ['2026-08-05', '2026-08-08'],
       showings: [
         showing('2026-08-05', LIVE_OAK, ['7:00p']),
@@ -201,9 +227,7 @@ describe('timed bookings', () => {
         showing('2026-08-08', PALLADIUM, ['2:00p']),
       ],
     });
-    expect(notes(m, week)).toBe(
-      'Wednesday at Regal Live Oak (7:00p) and Palladium (9:15p), Saturday 2:00p at Palladium',
-    );
+    expect(notes(m, week)).toBe('Wednesday and Saturday only at Regal Live Oak and Palladium');
   });
 
   it('falls back to dates when a calendar gave no time or the booking is busy', () => {
@@ -234,8 +258,15 @@ describe('timed bookings', () => {
 describe('run gaps, history and markers', () => {
   const week = dateRange('2026-08-03', '2026-08-09');
   const wide = Array.from({ length: 9 }, (_, i) => `T${i}`);
-  const withHistory = (m: AggregatedMovie, firstDate: string | null): string =>
-    buildNotes(m, week, week[0] ?? '', week.at(-1) ?? '', OPTS, NAMES, undefined, { firstDate });
+  const withHistory = (
+    m: AggregatedMovie,
+    firstDate: string | null,
+    watchedSince: string | null = '2026-07-01',
+  ): string =>
+    buildNotes(m, week, week[0] ?? '', week.at(-1) ?? '', OPTS, NAMES, undefined, {
+      firstDate,
+      watchedSince,
+    });
 
   it('says except for a run that skips a day', () => {
     const m = movie({ theaters: wide, dates: week.filter((d) => d !== '2026-08-06') });
@@ -247,6 +278,14 @@ describe('run gaps, history and markers', () => {
     expect(withHistory(m, '2026-08-03')).toBe('New this week');
     expect(withHistory(m, '2026-07-01')).toBe('');
     expect(withHistory(m, null)).toBe('');
+  });
+
+  it('says nothing about a film first listed the day the ledger started', () => {
+    // A ledger's first run sees every film in the market for the first time;
+    // that is evidence of nothing.
+    const m = movie({ theaters: wide, dates: week });
+    expect(withHistory(m, '2026-08-03', '2026-08-03')).toBe('');
+    expect(withHistory(m, '2026-08-03', null)).toBe('');
   });
 
   it('reads a late start as a span, not an opening, for a film already running', () => {

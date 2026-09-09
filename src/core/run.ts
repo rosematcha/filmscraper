@@ -115,6 +115,14 @@ export function detectFrontier(
 export interface RunHistory {
   /** Earliest date the film was ever listed for, across every run. */
   readonly firstDate?: IsoDate | null;
+  /**
+   * Earliest date the ledger itself covers.
+   *
+   * A film whose first listed date is the day the ledger started may have been
+   * playing for months; only a first date *after* that is evidence of an
+   * opening.
+   */
+  readonly watchedSince?: IsoDate | null;
 }
 
 export interface RunClassification {

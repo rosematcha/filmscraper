@@ -38,6 +38,8 @@ export interface SectionContext extends RunWindow {
   readonly currentYear: number;
   /** Earliest date the ledger ever listed a film for, when it has one. */
   readonly firstDateOf?: (movie: AggregatedMovie) => IsoDate | null;
+  /** Earliest date the ledger itself covers. */
+  readonly watchedSince?: IsoDate | null;
 }
 
 /**
@@ -59,6 +61,11 @@ export interface SectionDef {
   /** Lower claims first; defaults to the identity tier. */
   readonly claimRank?: ClaimRank;
   readonly defaultOn: boolean;
+  /**
+   * Whether the table starts unfolded. Everything about this week does; the
+   * long tails — next week, and the wide releases — start shut behind a count.
+   */
+  readonly defaultOpen?: boolean;
   /**
    * Row order this table reads best in. A list of one-night screenings is
    * read by date; a list of wide releases by reach. The reader's own sort
@@ -201,7 +208,10 @@ function playsAt(movie: AggregatedMovie, sourceId: string): boolean {
 
 /** The run shape, judged with whatever the ledger knows about the film. */
 function shapeOf(movie: AggregatedMovie, ctx: SectionContext): string {
-  return classifyRun(movie.dates, ctx, { firstDate: ctx.firstDateOf?.(movie) ?? null }).shape;
+  return classifyRun(movie.dates, ctx, {
+    firstDate: ctx.firstDateOf?.(movie) ?? null,
+    watchedSince: ctx.watchedSince ?? null,
+  }).shape;
 }
 
 /**
@@ -209,12 +219,16 @@ function shapeOf(movie: AggregatedMovie, ctx: SectionContext): string {
  *
  * Catches what the shape alone cannot: a film that opened Friday and now
  * plays every day of a Wednesday-to-Tuesday window looks like it has always
- * been there.
+ * been there. It takes a ledger that predates the film's first date to say so
+ * — on a ledger's first run every film's first date is the day it started
+ * watching, which is evidence of nothing.
  */
 export function opensWithin(movie: AggregatedMovie, ctx: SectionContext): boolean {
   const first = ctx.firstDateOf?.(movie);
+  const since = ctx.watchedSince;
   const start = ctx.windowDates[0];
   if (typeof first !== 'string' || start === undefined) return false;
+  if (typeof since !== 'string' || first <= since) return false;
   return first >= start;
 }
 
@@ -227,16 +241,6 @@ export function opensWithin(movie: AggregatedMovie, ctx: SectionContext): boolea
  * identity tables below have not already taken.
  */
 export const SECTIONS: readonly SectionDef[] = [
-  {
-    id: 'coming',
-    heading: 'Coming soon',
-    label: 'Coming soon',
-    hint: 'On sale for dates after the window',
-    mode: 'upcoming',
-    defaultOn: true,
-    order: 'soonest',
-    match: (movie) => !movie.isFixture,
-  },
   {
     id: 'opens',
     heading: 'Opens this week',
@@ -291,6 +295,19 @@ export const SECTIONS: readonly SectionDef[] = [
     defaultOn: true,
     order: 'soonest',
     match: (movie, ctx) => isSpecialEvent(movie, ctx.currentYear),
+  },
+  {
+    id: 'coming',
+    heading: 'Coming soon',
+    label: 'Coming soon',
+    hint: 'On sale for the week after the window',
+    mode: 'upcoming',
+    defaultOn: true,
+    // Shut by default: it is a week nobody asked about yet, and its count in
+    // the header is enough to say whether opening it is worth it.
+    defaultOpen: false,
+    order: 'soonest',
+    match: (movie) => !movie.isFixture,
   },
   {
     id: 'drive-in',
@@ -387,6 +404,8 @@ export interface SectionExtras {
   readonly upcoming?: readonly AggregatedMovie[];
   /** Earliest listed date per film, from the ledger. */
   readonly firstDateOf?: (movie: AggregatedMovie) => IsoDate | null;
+  /** Earliest date the ledger itself covers. */
+  readonly watchedSince?: IsoDate | null;
 }
 
 interface Buckets {
@@ -468,6 +487,7 @@ export function buildSections(
     ...window,
     currentYear: options.currentYear,
     ...(extras.firstDateOf ? { firstDateOf: extras.firstDateOf } : {}),
+    watchedSince: extras.watchedSince ?? null,
   };
   const active = SECTIONS.filter((s) => options.tables.includes(s.id));
   const collected = new Map<string, AggregatedMovie[]>(active.map((s) => [s.id, []]));

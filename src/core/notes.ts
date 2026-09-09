@@ -137,9 +137,15 @@ export function describeDates(
   }
 }
 
-/** The most bookings a note will spell out with times before summarising. */
-const MAX_TIMED_DATES = 3;
-const MAX_TIMED_VENUES = 4;
+/**
+ * How much of a booking a note will spell out with times.
+ *
+ * The budget is dates times venues, not each separately: one night at two
+ * venues and two nights at one both read cleanly, while two nights at two
+ * venues is four bracketed time lists and nobody reads that.
+ */
+const MAX_TIMED_SLOTS = 2;
+const MAX_TIMED_DATES = 2;
 const MAX_TIMES = 2;
 
 interface VenueTimes {
@@ -175,14 +181,28 @@ export function timedClause(
   const dates = movie.dates.filter((d) => windowDates.includes(d));
   if (dates.length === 0 || dates.length > MAX_TIMED_DATES) return null;
   if (movie.theaters.length > NAMED_THEATER_LIMIT) return null;
-  const parts: string[] = [];
+  const byDate: { date: IsoDate; venues: VenueTimes[] }[] = [];
+  let slots = 0;
   for (const date of dates) {
     const venues = venuesOn(movie.showings, date);
-    if (venues.length === 0 || venues.length > MAX_TIMED_VENUES) return null;
+    if (venues.length === 0) return null;
     if (venues.some((v) => v.times.length === 0 || v.times.length > MAX_TIMES)) return null;
-    parts.push(`${weekdayOrDate(date, windowDates)} ${dayClause(venues, short)}`);
+    slots += venues.length;
+    if (slots > MAX_TIMED_SLOTS) return null;
+    byDate.push({ date, venues });
   }
-  return parts.join(', ');
+
+  // A two-night booking at one venue names it once at the end: "Saturday
+  // 4:00p and Tuesday 10:10p at Park North", not the venue twice.
+  const venue = byDate[0]?.venues[0];
+  const oneVenue =
+    venue !== undefined && byDate.every((d) => d.venues.length === 1 && d.venues[0]?.theater === venue.theater);
+  const when = (date: IsoDate): string => weekdayOrDate(date, windowDates);
+  if (oneVenue) {
+    const nights = byDate.map(({ date, venues }) => `${when(date)} ${humanList(venues[0]?.times ?? [])}`);
+    return `${humanList(nights)} at ${short(venue.theater)}`;
+  }
+  return byDate.map(({ date, venues }) => `${when(date)} ${dayClause(venues, short)}`).join(', ');
 }
 
 /** "7:00p at A and B", or "at A (7:00p) and B (9:15p)" when the venues differ. */
@@ -276,6 +296,8 @@ function languageClause(movie: AggregatedMovie): string | null {
 export interface NoteExtras {
   /** Earliest date the ledger ever listed the film for. */
   readonly firstDate?: IsoDate | null;
+  /** Earliest date the ledger itself covers. */
+  readonly watchedSince?: IsoDate | null;
 }
 
 /**
@@ -296,7 +318,10 @@ function whenClause(
       ? `daily at ${humanList(movie.theaters.map(short))}`
       : 'daily';
   }
-  const history = { firstDate: extras.firstDate ?? null };
+  const history = {
+    firstDate: extras.firstDate ?? null,
+    watchedSince: extras.watchedSince ?? null,
+  };
   // Times are spelled out only for scattered bookings. A film that plays the
   // whole window has dozens of them, and the link answers that.
   const { shape } = classifyRun(
@@ -311,9 +336,13 @@ function whenClause(
   const limitedVenues = movie.theaters.length <= NAMED_THEATER_LIMIT;
   const venueList = humanList(movie.theaters.map(short));
   const dateClause = describeDates(movie.dates, windowDates, knownFrom, horizon, frontier, history);
+  // Same evidence the opening table needs: a first date on the day the ledger
+  // started watching says nothing about when the film actually opened.
   const newThisWeek =
     dateClause === null &&
     typeof extras.firstDate === 'string' &&
+    typeof extras.watchedSince === 'string' &&
+    extras.firstDate > extras.watchedSince &&
     extras.firstDate >= (windowDates[0] ?? '');
 
   if (dateClause && limitedVenues) return `${dateClause} at ${venueList}`;

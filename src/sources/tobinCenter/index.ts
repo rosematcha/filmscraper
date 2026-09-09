@@ -10,7 +10,10 @@ export const TOBIN_CINEMA = {
   label: 'Tobin Center Cinema',
   cinemaUrl: 'https://www.tobincenter.org/cinema',
   // Will Naylor Smith River Walk Plaza at the Tobin Center, 100 Auditorium Circle.
-  postalCode: '78205',
+  // Given as coordinates rather than a ZIP: the venue's ZIP is the one the
+  // scrape searches from, so the centroid fallback measured it as zero miles
+  // away, which sorted the plaza above every theater in the city.
+  coords: { lat: 29.4297, lon: -98.4899 },
   /** Every screening on the plaza page begins at 7 PM. */
   defaultTime: '7:00p',
 } as const;
@@ -85,7 +88,7 @@ export class TobinCinemaSource implements Source {
         film,
         url: event.url,
         venueName: event.venueName,
-        postalCode: TOBIN_CINEMA.postalCode,
+        coords: TOBIN_CINEMA.coords,
         date: event.date,
         time: TOBIN_CINEMA.defaultTime,
         // The cinema page describes one series, so its admission line covers
