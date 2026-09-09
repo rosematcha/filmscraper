@@ -106,6 +106,17 @@ export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   keepYears: false,
 };
 
+/** One venue's live showtimes for a film on one date. */
+export interface Showing {
+  readonly date: IsoDate;
+  readonly theater: string;
+  /** Display times in listing order, expired ones dropped. */
+  readonly times: readonly string[];
+  /** Noteworthy format for these times, when the group carried one. */
+  readonly format: string | null;
+  readonly sourceId: string;
+}
+
 /** A ticket link attributed to the operator that honours it. */
 export interface TicketLink {
   /** Operator name, e.g. `AMC`. */
@@ -142,8 +153,25 @@ export interface AggregatedMovie {
   readonly optional: ReadonlyMap<string, readonly string[]>;
   /** The same labels mapped to the dates they appear on. */
   readonly optionalDates: ReadonlyMap<string, readonly IsoDate[]>;
-  /** True when any group carried a special-event marker (e.g. Fathom Features). */
+  /**
+   * True when every live group carried a special-event marker (e.g. Fathom
+   * Features). Any-group would send a wide release to the events table on the
+   * strength of one early-access showing.
+   */
   readonly isEvent: boolean;
+  /**
+   * Noteworthy event amenity label -> theaters carrying it: Q&A, early access,
+   * fan event. Kept apart from `isEvent`, which is about the whole booking.
+   */
+  readonly events: ReadonlyMap<string, readonly string[]>;
+  readonly eventDates: ReadonlyMap<string, readonly IsoDate[]>;
+  /** Every live showing, by date then venue distance, for timing and the day and venue views. */
+  readonly showings: readonly Showing[];
+  /**
+   * A year-round fixture named in `AliasConfig.sentinels`. It plays daily and
+   * proves a schedule is posted; it is never opening, closing or an event.
+   */
+  readonly isFixture: boolean;
   /** Source ids that listed this film, e.g. `fandango`, `sapl`. */
   readonly sources: readonly string[];
   /** Original languages Fandango named, e.g. `["Telugu"]`. May be empty. */
@@ -231,4 +259,14 @@ export interface ScrapeResult {
   readonly failedSourceDates?: Readonly<Record<string, readonly IsoDate[]>>;
   /** The raw venue-days behind `movies`, for publishing a reusable dataset. */
   readonly days: readonly VenueDay[];
+  /**
+   * Films on sale only for dates after the window, when the caller knows
+   * about later weeks. The CLI scrapes exactly the window and has none.
+   */
+  readonly upcoming?: readonly AggregatedMovie[];
+  /**
+   * Film key -> earliest date it was ever listed for, from the ledger of past
+   * runs. Absent when no ledger has been published yet.
+   */
+  readonly firstDates?: ReadonlyMap<string, IsoDate>;
 }

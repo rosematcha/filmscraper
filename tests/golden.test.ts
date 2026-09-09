@@ -3,7 +3,12 @@ import { aggregate, EMPTY_ALIASES } from '../src/core/aggregate.js';
 import { renderMarkdown, sortMovies, tierOf } from '../src/core/markdown.js';
 import { DEFAULT_SECTION_OPTIONS } from '../src/core/sections.js';
 import { expiredTodayWarning } from '../src/core/pipeline.js';
-import { DEFAULT_RENDER_OPTIONS, type ScrapeResult, type Theater, type VenueDay } from '../src/core/types.js';
+import {
+  DEFAULT_RENDER_OPTIONS,
+  type ScrapeResult,
+  type Theater,
+  type VenueDay,
+} from '../src/core/types.js';
 import { fixtureVenueDays } from './helpers.js';
 
 const THEATER_NAMES = {
@@ -22,9 +27,9 @@ const THEATER_NAMES = {
 
 function resultFor(dates: string[]): ScrapeResult {
   const days: VenueDay[] = dates.flatMap((d) => fixtureVenueDays(d));
-  const theaters: Theater[] = [...new Map(days.map((d) => [d.theater.name, d.theater])).values()].sort(
-    (a, b) => a.miles - b.miles || a.name.localeCompare(b.name),
-  );
+  const theaters: Theater[] = [
+    ...new Map(days.map((d) => [d.theater.name, d.theater])).values(),
+  ].sort((a, b) => a.miles - b.miles || a.name.localeCompare(b.name));
   return {
     request: { zip: '78205', from: dates[0] ?? '', to: dates.at(-1) ?? '', radiusMiles: 15 },
     dates,
@@ -72,7 +77,7 @@ describe('golden table — 78205, Aug 4–5 2026, 15 mi', () => {
   it('deep-links single-date events and dates them', () => {
     const row = table.split('\n').find((l) => l.includes('Willy Wonka')) ?? '';
     expect(row).toContain('?date=2026-08-05');
-    expect(row).toContain('August 5 only');
+    expect(row).toContain('Wednesday only');
   });
 
   it('never names more than three venues in a scarcity note', () => {

@@ -1,18 +1,14 @@
-import { buildNotes } from './notes.js';
+import { buildNotes, humanList, monthDay, shortenTheater, weekdayAndDate } from './notes.js';
 import {
   buildSections,
   DEFAULT_SECTION_OPTIONS,
+  NAMED_THEATER_LIMIT_FOR_UPCOMING,
+  SECTION_BY_ID,
   WIDE_THEATER_FLOOR,
   type SectionOptions,
 } from './sections.js';
 import { detectFrontier, type RunWindow } from './run.js';
-import type {
-  AggregatedMovie,
-  IsoDate,
-  RenderOptions,
-  ScrapeResult,
-  SortOrder,
-} from './types.js';
+import type { AggregatedMovie, IsoDate, RenderOptions, ScrapeResult, SortOrder } from './types.js';
 
 /**
  * The dates a result can actually speak to.
@@ -122,7 +118,10 @@ export function sortMovies(
   if (order === 'title') return [...movies].sort(byTitle);
   if (order === 'soonest') {
     return [...movies].sort(
-      (a, b) => (a.dates[0] ?? '').localeCompare(b.dates[0] ?? '') || byTitle(a, b),
+      (a, b) =>
+        (a.dates[0] ?? '').localeCompare(b.dates[0] ?? '') ||
+        b.theaters.length - a.theaters.length ||
+        byTitle(a, b),
     );
   }
   return [...movies].sort(
@@ -134,16 +133,64 @@ export function sortMovies(
   );
 }
 
+/**
+ * The order a given table is read in.
+ *
+ * `reach` is the default and means "whatever this table reads best in": a
+ * list of one-nighters by date, the wide releases by reach. Any other choice
+ * is the reader asking for that order everywhere.
+ */
+export function sectionOrder(sectionId: string, requested: SortOrder | undefined): SortOrder {
+  const preferred = SECTION_BY_ID.get(sectionId)?.order;
+  if (requested === undefined || requested === 'reach') return preferred ?? 'reach';
+  return requested;
+}
+
+/**
+ * "Opens Friday, September 18 at Park North": the note for a film with no
+ * date inside the window. The weekday is spelled out because nothing else on
+ * the page gives the reader its context.
+ */
+export function upcomingNotes(
+  movie: AggregatedMovie,
+  theaterNames: Readonly<Record<string, string>>,
+): string {
+  const first = movie.dates[0];
+  if (first === undefined) return '';
+  const short = (n: string): string => shortenTheater(n, theaterNames);
+  const where =
+    movie.theaters.length <= NAMED_THEATER_LIMIT_FOR_UPCOMING
+      ? ` at ${humanList(movie.theaters.map(short))}`
+      : '';
+  const single = movie.dates.length === 1 ? ' only' : '';
+  return `${weekdayAndDate(first)}${single}${where}`;
+}
+
 function toRow(
   movie: AggregatedMovie,
   result: ScrapeResult,
   options: RenderOptions,
   theaterNames: Readonly<Record<string, string>>,
-  frontier: IsoDate,
+  window: RunWindow,
+  upcoming: boolean,
 ): SortedMovie {
+  const frontier = window.frontier ?? result.horizon;
+  const extras = { firstDate: result.firstDates?.get(movie.key) ?? null };
+  const notes = upcoming
+    ? upcomingNotes(movie, theaterNames)
+    : buildNotes(
+        movie,
+        result.dates,
+        result.knownFrom,
+        result.horizon,
+        options,
+        theaterNames,
+        frontier,
+        extras,
+      );
   return {
     movie,
-    notes: buildNotes(movie, result.dates, result.knownFrom, result.horizon, options, theaterNames, frontier),
+    notes,
     url: movieUrl(movie, result.dates, result.knownFrom, result.horizon),
     links: movie.ticketLinks.map((link) => ({
       label: link.label,
@@ -158,20 +205,42 @@ export function linkCell(row: SortedMovie): string {
   return row.links.map((link) => `[${cell(link.label)}](${link.url})`).join(' · ');
 }
 
+/** Sections with their rows already built and ordered. */
+function renderSections(
+  result: ScrapeResult,
+  options: RenderOptions,
+  theaterNames: Readonly<Record<string, string>>,
+  sectionOptions: SectionOptions,
+): { id: string; heading: string | null; rows: SortedMovie[] }[] {
+  const window = runWindow(result);
+  const firstDateOf = (movie: AggregatedMovie): IsoDate | null =>
+    result.firstDates?.get(movie.key) ?? null;
+  const sections = buildSections(result.movies, sectionOptions, window, {
+    ...(result.upcoming ? { upcoming: result.upcoming } : {}),
+    ...(result.firstDates ? { firstDateOf } : {}),
+  });
+  return sections.map((section) => {
+    const upcoming = SECTION_BY_ID.get(section.id)?.mode === 'upcoming';
+    const order = sectionOrder(section.id, options.sort);
+    return {
+      id: section.id,
+      heading: section.heading,
+      rows: sortMovies(section.movies, order).map((movie) => ({
+        ...toRow(movie, result, options, theaterNames, window, upcoming),
+        section: section.id,
+        sectionHeading: section.heading,
+      })),
+    };
+  });
+}
+
 export function renderRows(
   result: ScrapeResult,
   options: RenderOptions,
   theaterNames: Readonly<Record<string, string>>,
   sectionOptions: SectionOptions = DEFAULT_SECTION_OPTIONS,
 ): SortedMovie[] {
-  const window = runWindow(result);
-  return buildSections(result.movies, sectionOptions, window).flatMap((section) =>
-    sortMovies(section.movies, options.sort).map((movie) => ({
-      ...toRow(movie, result, options, theaterNames, window.frontier ?? result.horizon),
-      section: section.id,
-      sectionHeading: section.heading,
-    })),
-  );
+  return renderSections(result, options, theaterNames, sectionOptions).flatMap((s) => s.rows);
 }
 
 const HEADER = ['| Movie | Link | Notes |', '|-------|------|-------|'];
@@ -183,13 +252,11 @@ export function renderMarkdown(
   sectionOptions: SectionOptions = DEFAULT_SECTION_OPTIONS,
 ): string {
   const blocks: string[] = [];
-  const window = runWindow(result);
-  for (const section of buildSections(result.movies, sectionOptions, window)) {
-    if (section.movies.length === 0) continue;
+  for (const section of renderSections(result, options, theaterNames, sectionOptions)) {
+    if (section.rows.length === 0) continue;
     const lines = section.heading ? [`### ${section.heading}`, '', ...HEADER] : [...HEADER];
-    for (const movie of sortMovies(section.movies, options.sort)) {
-      const row = toRow(movie, result, options, theaterNames, window.frontier ?? result.horizon);
-      lines.push(`| ${cell(movie.title)} | ${linkCell(row)} | ${cell(row.notes)} |`);
+    for (const row of section.rows) {
+      lines.push(`| ${cell(row.movie.title)} | ${linkCell(row)} | ${cell(row.notes)} |`);
     }
     blocks.push(lines.join('\n'));
   }
@@ -201,3 +268,6 @@ export function renderWarnings(result: ScrapeResult): string {
   if (result.warnings.length === 0) return '';
   return result.warnings.map((w) => `> **Note:** ${w.message}`).join('\n>\n');
 }
+
+/** Re-exported so the site can phrase a date the way the notes do. */
+export { monthDay };

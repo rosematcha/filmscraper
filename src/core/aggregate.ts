@@ -5,6 +5,7 @@ import { displayTitle, extractYear, mergeKey, movieIdFromHref } from './titles.j
 import type {
   AggregatedMovie,
   IsoDate,
+  Showing,
   ShowtimeGroup,
   Theater,
   TicketLink,
@@ -37,6 +38,28 @@ export interface AggregateOptions {
 /** A group counts as live if anything in it has not already screened. */
 export function isLive(group: ShowtimeGroup): boolean {
   return group.showtimes.some((s) => !s.expired);
+}
+
+/**
+ * How authoritative a source is about a showing it shares with another.
+ *
+ * Venue-owned listings outrank third-party programme mirrors: when Mission
+ * Marquee says 7:00p and Slab's calendar says 8:00p for the same night, the
+ * venue is right about its own doors.
+ */
+export function sourceRank(sourceId: string): number {
+  if (sourceId === 'fandango') return 100;
+  if (sourceId.startsWith('slab-')) return 10;
+  return 50;
+}
+
+/** Whether a listing is one of the year-round fixtures named in the aliases. */
+export function isFixtureTitle(
+  title: string,
+  sentinels: Readonly<Record<string, string>>,
+): boolean {
+  const lower = title.toLowerCase();
+  return Object.values(sentinels).some((fragment) => lower.includes(fragment.toLowerCase()));
 }
 
 /**
@@ -75,7 +98,12 @@ interface Accumulator {
   formats: Map<string, Set<string>>;
   optional: Map<string, Set<string>>;
   optionalDates: Map<string, Set<IsoDate>>;
-  isEvent: boolean;
+  events: Map<string, Set<string>>;
+  eventDates: Map<string, Set<IsoDate>>;
+  showings: Showing[];
+  /** Live groups carrying a special-event marker, against the total seen. */
+  eventGroups: number;
+  isFixture: boolean;
   sources: Set<string>;
   languages: Set<string>;
   /** Live groups carrying a non-English marker, against the total seen. */
@@ -101,7 +129,11 @@ function blank(key: string, title: string, href: string): Accumulator {
     formats: new Map(),
     optional: new Map(),
     optionalDates: new Map(),
-    isEvent: false,
+    events: new Map(),
+    eventDates: new Map(),
+    showings: [],
+    eventGroups: 0,
+    isFixture: false,
     sources: new Set(),
     languages: new Set(),
     foreignGroups: 0,
@@ -140,6 +172,8 @@ export function aggregate(
         acc = blank(mergeKey(listing.title), listing.title, listing.href);
         byHref.set(listing.href, acc);
       }
+      const sourceId = day.sourceId ?? 'fandango';
+      acc.isFixture ||= isFixtureTitle(listing.title, options.aliases.sentinels);
       const year = extractYear(listing.title);
       if (year !== null) acc.years.add(year);
       const id = movieIdFromHref(listing.href);
@@ -155,20 +189,33 @@ export function aggregate(
         acc.freeDates.add(day.date);
       }
       acc.dates.add(day.date);
-      acc.sources.add(day.sourceId ?? 'fandango');
+      acc.sources.add(sourceId);
 
       for (const group of live) {
         const format = groupFormat(group);
         if (format) addTo(acc.formats, format, day.theater.name);
+        acc.showings.push({
+          date: day.date,
+          theater: day.theater.name,
+          times: group.showtimes.filter((s) => !s.expired).map((s) => s.time),
+          format,
+          sourceId,
+        });
+        let eventHere = false;
         for (const amenity of group.amenities) {
           const c = classifyAmenity(amenity);
           if (c.cls === 'access' || c.cls === 'language') {
             addTo(acc.optional, c.label, day.theater.name);
             addTo(acc.optionalDates, c.label, day.date);
           } else if (c.cls === 'event') {
-            acc.isEvent = true;
+            eventHere = true;
+            if (c.noted) {
+              addTo(acc.events, c.label, day.theater.name);
+              addTo(acc.eventDates, c.label, day.date);
+            }
           }
         }
+        if (eventHere) acc.eventGroups++;
         // A film counts as foreign only when *every* showing is non-English.
         // Spider-Man has one Spanish-dubbed screening among dozens; that makes
         // it a dub of an English film, not a foreign release.
@@ -213,6 +260,31 @@ function mysteryLinks(chainHrefs: ReadonlyMap<string, string>): TicketLink[] {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/**
+ * One showing per venue-day-format, from the most authoritative source.
+ *
+ * Two calendars can list the same night with different times (doors versus
+ * film); keeping both would print a screening that does not exist.
+ */
+function reconcileShowings(
+  showings: readonly Showing[],
+  byDistance: (a: string, b: string) => number,
+): Showing[] {
+  const best = new Map<string, Showing>();
+  for (const showing of showings) {
+    const key = [showing.date, showing.theater, showing.format ?? ''].join('|');
+    const prior = best.get(key);
+    if (!prior || sourceRank(showing.sourceId) > sourceRank(prior.sourceId)) {
+      best.set(key, showing);
+    } else if (showing.sourceId === prior.sourceId) {
+      best.set(key, { ...prior, times: [...new Set([...prior.times, ...showing.times])] });
+    }
+  }
+  return [...best.values()].sort(
+    (a, b) => a.date.localeCompare(b.date) || byDistance(a.theater, b.theater),
+  );
+}
+
 function mergeAccumulators(
   accumulators: readonly Accumulator[],
   options: AggregateOptions,
@@ -252,7 +324,10 @@ function mergeAccumulators(
     // screens. Among equals the shortest title wins, so "Backrooms" beats the
     // bonus-footage edition.
     const weight = acc.theaters.size;
-    if (weight > target.titleWeight || (weight === target.titleWeight && acc.title.length < target.title.length)) {
+    if (
+      weight > target.titleWeight ||
+      (weight === target.titleWeight && acc.title.length < target.title.length)
+    ) {
       target.title = acc.title;
       target.href = acc.href;
       target.titleWeight = weight;
@@ -271,9 +346,15 @@ function mergeAccumulators(
     for (const [label, set] of acc.optionalDates) {
       for (const d of set) addTo(target.optionalDates, label, d);
     }
+    for (const [label, set] of acc.events) for (const t of set) addTo(target.events, label, t);
+    for (const [label, set] of acc.eventDates) {
+      for (const d of set) addTo(target.eventDates, label, d);
+    }
+    target.showings.push(...acc.showings);
     for (const source of acc.sources) target.sources.add(source);
     for (const language of acc.languages) target.languages.add(language);
-    target.isEvent ||= acc.isEvent;
+    target.eventGroups += acc.eventGroups;
+    target.isFixture ||= acc.isFixture;
     target.foreignGroups += acc.foreignGroups;
     target.totalGroups += acc.totalGroups;
     for (const year of acc.years) target.years.add(year);
@@ -287,9 +368,9 @@ function mergeAccumulators(
     // Only the mystery nights get per-chain links. Every other cross-chain
     // merge folds listings that all sell through the same page, and a format
     // variant merge would otherwise sprout links that mean nothing.
-    const ticketLinks: TicketLink[] =
-      acc.key === MYSTERY_KEY ? mysteryLinks(acc.chainHrefs) : [];
-    const title = acc.key === MYSTERY_KEY ? mysteryTitle(dates) : displayTitle(acc.title, keepYears);
+    const ticketLinks: TicketLink[] = acc.key === MYSTERY_KEY ? mysteryLinks(acc.chainHrefs) : [];
+    const title =
+      acc.key === MYSTERY_KEY ? mysteryTitle(dates) : displayTitle(acc.title, keepYears);
 
     return {
       key: acc.key,
@@ -303,7 +384,13 @@ function mergeAccumulators(
       formats: new Map([...acc.formats].map(([k, v]) => [k, [...v].sort(byDistance)])),
       optional: new Map([...acc.optional].map(([k, v]) => [k, [...v].sort(byDistance)])),
       optionalDates: new Map([...acc.optionalDates].map(([k, v]) => [k, [...v].sort()])),
-      isEvent: acc.isEvent,
+      events: new Map([...acc.events].map(([k, v]) => [k, [...v].sort(byDistance)])),
+      eventDates: new Map([...acc.eventDates].map(([k, v]) => [k, [...v].sort()])),
+      showings: reconcileShowings(acc.showings, byDistance),
+      // Every live group marked, not any: one early-access night does not make
+      // a wide release an event, but a Fathom booking is marked throughout.
+      isEvent: acc.eventGroups > 0 && acc.eventGroups === acc.totalGroups,
+      isFixture: acc.isFixture,
       sources: [...acc.sources].sort(),
       languages: acc.foreignGroups === acc.totalGroups ? [...acc.languages].sort() : [],
       foreign: acc.totalGroups > 0 && acc.foreignGroups === acc.totalGroups,

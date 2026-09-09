@@ -51,7 +51,11 @@ const group = (amenities: Amenity[]) => ({
   showtimes: [{ time: '7:00p', expired: false }],
 });
 
-function day(sourceId: string | undefined, title: string, groups: ReturnType<typeof group>[]): VenueDay {
+function day(
+  sourceId: string | undefined,
+  title: string,
+  groups: ReturnType<typeof group>[],
+): VenueDay {
   return {
     theater: { name: `V-${sourceId ?? 'fandango'}`, href: '', miles: 1 },
     date: '2026-08-07',
@@ -61,11 +65,17 @@ function day(sourceId: string | undefined, title: string, groups: ReturnType<typ
 }
 
 const agg = (days: VenueDay[]): AggregatedMovie[] =>
-  aggregate(days, days.map((d) => d.theater), { aliases: EMPTY_ALIASES, keepYears: false });
+  aggregate(
+    days,
+    days.map((d) => d.theater),
+    { aliases: EMPTY_ALIASES, keepYears: false },
+  );
 
 describe('foreign detection', () => {
   it('flags a release whose every showing is non-English', () => {
-    const [movie] = agg([day(undefined, 'El Gawahergy', [group([{ id: 1512, name: 'Arabic Language' }])])]);
+    const [movie] = agg([
+      day(undefined, 'El Gawahergy', [group([{ id: 1512, name: 'Arabic Language' }])]),
+    ]);
     expect(movie?.foreign).toBe(true);
     expect(movie?.languages).toEqual(['Arabic']);
   });
@@ -107,10 +117,11 @@ describe('buildSections', () => {
     expect(find(sections, 'drive-in')?.movies.map((m) => m.title)).toEqual(['Drive-In Only']);
     expect(find(sections, 'library')?.movies.map((m) => m.title)).toEqual(['Library Only']);
     // Foreign stays inline by default.
-    expect(find(sections, 'main')?.movies.map((m) => m.title).sort()).toEqual([
-      'Foreign Film',
-      'Wide Release',
-    ]);
+    expect(
+      find(sections, 'main')
+        ?.movies.map((m) => m.title)
+        .sort(),
+    ).toEqual(['Foreign Film', 'Wide Release']);
   });
 
   it('keeps everything in one table when the options are off', () => {
@@ -134,7 +145,10 @@ describe('buildSections', () => {
     // would leave its table empty nearly every week.
     const shared = agg([
       day(undefined, 'Spider-Man', [group([])]),
-      { ...day('stars-and-stripes', 'Spider-Man', [group([])]), theater: { name: 'Drive-In', href: '', miles: 30 } },
+      {
+        ...day('stars-and-stripes', 'Spider-Man', [group([])]),
+        theater: { name: 'Drive-In', href: '', miles: 30 },
+      },
     ]);
     const sections = buildSections(shared, only('drive-in'));
     expect(find(sections, 'main')?.movies.map((m) => m.title)).toEqual(['Spider-Man']);
@@ -177,6 +191,10 @@ describe('isSpecialEvent', () => {
     optional: new Map(),
     optionalDates: new Map(),
     isEvent: false,
+    events: new Map(),
+    eventDates: new Map(),
+    showings: [],
+    isFixture: false,
     sources: ['fandango'],
     languages: [],
     foreign: false,
@@ -197,9 +215,9 @@ describe('isSpecialEvent', () => {
 
   it('does not mistake an ordinary title for a festival', () => {
     // "Manifest" ends in "fest"; the pattern must not fire on it.
-    expect(isSpecialEvent(movie({ title: 'Manifest', releaseYear: 2026, dates: ['a', 'b', 'c'] }), 2026)).toBe(
-      false,
-    );
+    expect(
+      isSpecialEvent(movie({ title: 'Manifest', releaseYear: 2026, dates: ['a', 'b', 'c'] }), 2026),
+    ).toBe(false);
   });
 
   it('flags amenity-marked events', () => {
@@ -224,18 +242,55 @@ describe('isSpecialEvent', () => {
       isSpecialEvent(movie({ title: 'The Sandlot', releaseYear: 1993, dates: ['d1'] }), 2026),
     ).toBe(true);
     expect(
+      isSpecialEvent(movie({ title: 'The Goonies', releaseYear: 1985, dates: ['d1', 'd2'] }), 2026),
+    ).toBe(true);
+  });
+
+  it('flags a revival of an old film however long it runs', () => {
+    // A week of The Sandlot is repertory programming, not a late leg.
+    expect(
       isSpecialEvent(
-        movie({ title: 'The Goonies', releaseYear: 1985, dates: ['d1', 'd2'] }),
+        movie({ title: 'The Sandlot', releaseYear: 1993, dates: ['a', 'b', 'c', 'd', 'e'] }),
         2026,
       ),
     ).toBe(true);
   });
 
+  it('never flags a fixture', () => {
+    expect(
+      isSpecialEvent(
+        movie({ title: 'Alamo: The Price of Freedom', releaseYear: null, isFixture: true }),
+        2026,
+      ),
+    ).toBe(false);
+  });
+
+  it('reads restorations and re-releases as events', () => {
+    for (const title of [
+      'Practical Magic Re-Release',
+      "Michael Mann's Manhunter: The Final Cut",
+      'Akira 4K Re-Release',
+      'August Crunchyroll Anime Nights - Your Letter',
+      'MST3K: The RiffTrax Experiments - Sting of Death',
+    ]) {
+      expect(
+        isSpecialEvent(movie({ title, releaseYear: 2026, dates: ['a', 'b', 'c'] }), 2026),
+        title,
+      ).toBe(true);
+    }
+  });
+
   it('leaves current releases alone', () => {
-    for (const title of ['Spider-Man: Brand New Day', 'Moana', 'Super Troopers 3', 'Evil Dead Burn']) {
-      expect(isSpecialEvent(movie({ title, releaseYear: 2026, dates: ['a', 'b', 'c'] }), 2026), title).toBe(
-        false,
-      );
+    for (const title of [
+      'Spider-Man: Brand New Day',
+      'Moana',
+      'Super Troopers 3',
+      'Evil Dead Burn',
+    ]) {
+      expect(
+        isSpecialEvent(movie({ title, releaseYear: 2026, dates: ['a', 'b', 'c'] }), 2026),
+        title,
+      ).toBe(false);
     }
   });
 
@@ -272,6 +327,10 @@ describe('open-caption table', () => {
     optional: oc ? new Map([['Open caption', ['Regal']]]) : new Map(),
     optionalDates: oc ? new Map([['Open caption', ['2026-08-05']]]) : new Map(),
     isEvent: false,
+    events: new Map(),
+    eventDates: new Map(),
+    showings: [],
+    isFixture: false,
     sources: ['fandango'],
     languages: [],
     foreign: false,
@@ -292,10 +351,12 @@ describe('open-caption table', () => {
     expect(sections.find((s) => s.id === 'open-captions')?.movies.map((m) => m.title)).toEqual([
       'Captioned',
     ]);
-    expect(sections.find((s) => s.id === 'main')?.movies.map((m) => m.title).sort()).toEqual([
-      'Captioned',
-      'Plain',
-    ]);
+    expect(
+      sections
+        .find((s) => s.id === 'main')
+        ?.movies.map((m) => m.title)
+        .sort(),
+    ).toEqual(['Captioned', 'Plain']);
   });
 
   it('narrows the captioned entry to its own venues and dates', () => {
@@ -321,15 +382,20 @@ describe('open-caption table', () => {
 });
 
 describe('default section options', () => {
-  it('splits free, non-English and special screenings out of the box', () => {
-    // Three tables answer "what is worth knowing that the main table buries".
-    // The timing tables are deliberately absent: judging whether a run has
-    // ended needs history the posting backlog is still collecting, so they
-    // stay opt-in rather than splitting the table on a single scrape. The two
-    // venue tables are a standing interest rather than a default one, and open
+  it('leads with what is coming, opening and closing out of the box', () => {
+    // The timing tables answer "what should I see this week" and now judge
+    // runs against the ledger as well as the posting frontier. The two venue
+    // tables are a standing interest rather than a default one, and open
     // captions duplicate rows for a minority audience.
-    expect([...DEFAULT_SECTION_OPTIONS.tables].sort()).toEqual(['events', 'foreign', 'free']);
-    for (const optIn of ['drive-in', 'library', 'open-captions', 'opens', 'last-chance']) {
+    expect([...DEFAULT_SECTION_OPTIONS.tables].sort()).toEqual([
+      'coming',
+      'events',
+      'foreign',
+      'free',
+      'last-chance',
+      'opens',
+    ]);
+    for (const optIn of ['drive-in', 'library', 'open-captions']) {
       expect(DEFAULT_SECTION_OPTIONS.tables).not.toContain(optIn);
     }
     expect(DEFAULT_SECTION_OPTIONS.excludeForeign).toBe(false);
@@ -347,7 +413,11 @@ describe('highlight tables', () => {
   const week = ['2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06', '2026-08-07'];
   const window = { windowDates: week, knownFrom: '2026-08-03', horizon: '2026-08-07' };
 
-  const film = (title: string, dates: string[], over: Partial<AggregatedMovie> = {}): AggregatedMovie => ({
+  const film = (
+    title: string,
+    dates: string[],
+    over: Partial<AggregatedMovie> = {},
+  ): AggregatedMovie => ({
     key: title,
     title,
     href: `/${title}`,
@@ -359,6 +429,10 @@ describe('highlight tables', () => {
     optional: new Map(),
     optionalDates: new Map(),
     isEvent: false,
+    events: new Map(),
+    eventDates: new Map(),
+    showings: [],
+    isFixture: false,
     sources: ['fandango'],
     languages: [],
     foreign: false,
@@ -380,7 +454,11 @@ describe('highlight tables', () => {
   it('takes the film out of the main table', () => {
     // A timing table owns its rows: listing the same film twice made the page
     // read as though there were two bookings.
-    const sections = buildSections([film('Closing', week.slice(0, 3))], only('last-chance'), window);
+    const sections = buildSections(
+      [film('Closing', week.slice(0, 3))],
+      only('last-chance'),
+      window,
+    );
     expect(titles(sections, 'main')).toEqual([]);
   });
 
@@ -466,11 +544,7 @@ describe('highlight tables', () => {
       // listing must not prune the answer — the same reasoning that exempts
       // these tables from the radius.
       const atLibrary = film('Library Only', week, { theaters: ['Central'], sources: ['sapl'] });
-      const sections = buildSections(
-        [atLibrary],
-        { ...only('library'), hideSingle: true },
-        window,
-      );
+      const sections = buildSections([atLibrary], { ...only('library'), hideSingle: true }, window);
       expect(titles(sections, 'library')).toEqual(['Library Only']);
       expect(titles(sections, 'main')).toEqual([]);
     });
@@ -503,12 +577,16 @@ describe('claimed rows', () => {
       href: '/x',
       theaters: ['Alamo Quarry'],
       freeVenues: [],
-    freeDates: [],
+      freeDates: [],
       dates: ['2026-08-04'],
       formats: new Map(),
       optional: new Map(),
       optionalDates: new Map(),
       isEvent: false,
+      events: new Map(),
+      eventDates: new Map(),
+      showings: [],
+      isFixture: false,
       sources: ['fandango'],
       languages: ['Arabic'],
       foreign: true,
@@ -520,5 +598,70 @@ describe('claimed rows', () => {
     const listed = sections.filter((s) => s.movies.some((m) => m.title === 'Old Foreign Film'));
     expect(listed.map((s) => s.id)).toEqual(['foreign']);
   });
+});
 
+describe('coming soon and the ledger', () => {
+  const week = ['2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06', '2026-08-07'];
+  const window = { windowDates: week, knownFrom: '2026-08-03', horizon: '2026-08-07' };
+  const film = (
+    title: string,
+    dates: string[],
+    over: Partial<AggregatedMovie> = {},
+  ): AggregatedMovie => ({
+    key: title,
+    title,
+    href: `/${title}`,
+    theaters: ['Palladium'],
+    freeVenues: [],
+    freeDates: [],
+    dates,
+    formats: new Map(),
+    optional: new Map(),
+    optionalDates: new Map(),
+    isEvent: false,
+    events: new Map(),
+    eventDates: new Map(),
+    showings: [],
+    isFixture: false,
+    sources: ['fandango'],
+    languages: [],
+    foreign: false,
+    releaseYear: 2026,
+    mergedHrefs: [],
+    ticketLinks: [],
+    ...over,
+  });
+  const titles = (sections: ReturnType<typeof buildSections>, id: string): string[] =>
+    sections.find((s) => s.id === id)?.movies.map((m) => m.title) ?? [];
+
+  it('lists films on sale for after the window under coming soon', () => {
+    const later = film('Later', ['2026-08-20']);
+    const fixture = film('Fixture', ['2026-08-20'], { isFixture: true });
+    const sections = buildSections([], only('coming'), window, { upcoming: [later, fixture] });
+    expect(titles(sections, 'coming')).toEqual(['Later']);
+  });
+
+  it('is absent without anything upcoming', () => {
+    const sections = buildSections([film('Now', week)], only('coming'), window);
+    expect(sections.find((s) => s.id === 'coming')).toBeUndefined();
+  });
+
+  it('opens a film the ledger first lists inside the window, even when it plays every day', () => {
+    const all = film('Opened Friday', week);
+    const opened = buildSections([all], only('opens'), window, {
+      firstDateOf: () => '2026-08-03',
+    });
+    expect(titles(opened, 'opens')).toEqual(['Opened Friday']);
+    const running = buildSections([all], only('opens'), window, {
+      firstDateOf: () => '2026-07-20',
+    });
+    expect(titles(running, 'opens')).toEqual([]);
+    expect(titles(running, 'main')).toEqual(['Opened Friday']);
+  });
+
+  it('keeps a fixture out of every timing table', () => {
+    const fixture = film('Fixture', week.slice(0, 3), { isFixture: true, releaseYear: null });
+    const sections = buildSections([fixture], only('opens', 'last-chance', 'events'), window);
+    expect(titles(sections, 'main')).toEqual(['Fixture']);
+  });
 });

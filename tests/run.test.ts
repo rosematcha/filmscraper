@@ -118,6 +118,38 @@ describe('classifyRun', () => {
   });
 });
 
+describe('classifyRun with history', () => {
+  const MONTH = dateRange('2026-08-10', '2026-09-09');
+  const scraped = {
+    windowDates: MONTH,
+    knownFrom: '2026-08-11',
+    horizon: '2026-08-12',
+    frontier: '2026-08-20',
+  };
+
+  it('does not call a gap an opening when the ledger says the film played before', () => {
+    // The same dates as Nimrods' preview pattern, but the ledger has listed
+    // this film since the start of the month: it skipped a day, it did not open.
+    const gapped = ['2026-08-11', ...dateRange('2026-08-13', '2026-08-20')];
+    expect(classifyRun(gapped, scraped, { firstDate: '2026-08-01' }).shape).toBe('listed');
+    expect(classifyRun(gapped, scraped, { firstDate: '2026-08-11' }).shape).toBe('opens');
+  });
+
+  it('calls a late start a span when the film was already running', () => {
+    expect(classifyRun(WEEK.slice(2), posted, { firstDate: '2026-07-30' })).toEqual({
+      shape: 'span',
+      date: '2026-08-05',
+    });
+  });
+
+  it('changes nothing without a ledger entry', () => {
+    expect(classifyRun(WEEK.slice(2), posted, { firstDate: null })).toEqual({
+      shape: 'opens',
+      date: '2026-08-05',
+    });
+  });
+});
+
 describe('detectFrontier', () => {
   const MONTH = dateRange('2026-08-10', '2026-09-09');
 
@@ -128,12 +160,18 @@ describe('detectFrontier', () => {
   it('finds the posting cliff where most titles stop', () => {
     // Twenty wide releases posted through the 20th, a handful of pre-sold
     // events past it: the frontier is the 20th, not the events' September.
-    const titles = [...cohort(20, '2026-08-10', '2026-08-20'), ...cohort(3, '2026-08-10', '2026-09-05')];
+    const titles = [
+      ...cohort(20, '2026-08-10', '2026-08-20'),
+      ...cohort(3, '2026-08-10', '2026-09-05'),
+    ];
     expect(detectFrontier(titles, MONTH, '2026-08-11', '2026-08-12')).toBe('2026-08-20');
   });
 
   it('never reaches past a genuine falloff', () => {
-    const titles = [...cohort(10, '2026-08-10', '2026-08-13'), ...cohort(2, '2026-08-10', '2026-08-30')];
+    const titles = [
+      ...cohort(10, '2026-08-10', '2026-08-13'),
+      ...cohort(2, '2026-08-10', '2026-08-30'),
+    ];
     expect(detectFrontier(titles, MONTH, '2026-08-11', '2026-08-12')).toBe('2026-08-13');
   });
 

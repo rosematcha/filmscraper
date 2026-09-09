@@ -8,8 +8,14 @@ const TRAILING_YEAR = /\s*\((?:19|20)\d{2}\)\s*$/;
  * Stripped for the merge key only — they stay in the displayed title, where
  * "55th Anniversary" is genuinely useful information.
  */
-const VARIANT_SUFFIX =
-  /\s*[-–—:]?\s*\(?\b(\d{1,3}(st|nd|rd|th)\s+anniversary|anniversary(\s+edition)?|(extended|special|collector'?s|director'?s|ultimate|deluxe|final)\s+(edition|cut)|everything\s+must\s+go\s+edition|with\s+bonus\s+footage|re-?release|encore(\s+\d{4})?|fan\s+event|early\s+access|sing-?along|in\s+concert|imax\s+experience|the\s+imax\s+experience|3d|imax|dubbed|subtitled|in\s+spanish|spanish\s+language)\b\)?\s*/gi;
+const SUFFIX_WORDS =
+  "\\d{1,3}(st|nd|rd|th)\\s+anniversary|anniversary(\\s+edition)?|(extended|special|collector'?s|director'?s|ultimate|deluxe|final)\\s+(edition|cut)|everything\\s+must\\s+go\\s+edition|with\\s+bonus\\s+footage|re-?release|encore(\\s+\\d{4})?|fan\\s+event|early\\s+access(\\s+screening)?|sing-?along|in\\s+concert|imax\\s+experience|the\\s+imax\\s+experience|4k(\\s+(restoration|remaster(ed)?))?|remaster(ed)?(\\s*&\\s*revived)?|restoration|3d|imax|dubbed|subtitled|in\\s+spanish|spanish\\s+language";
+const VARIANT_SUFFIX = new RegExp(`\\s*[-–—:]?\\s*\\(?\\b(${SUFFIX_WORDS})\\b\\)?\\s*`, 'gi');
+/**
+ * The same words when they close a segment, so a subtitle wearing a suffix —
+ * "… in Anger IMAX Early Access Screening" — can lose the tail and keep the title.
+ */
+const TRAILING_SUFFIX = new RegExp(`(\\s*\\(?\\b(${SUFFIX_WORDS})\\b\\)?\\s*)+$`, 'i');
 
 /** Leading articles ignored when comparing titles for merge purposes. */
 const LEADING_ARTICLE = /^(the|a|an)\s+/i;
@@ -41,6 +47,13 @@ function stripEventTail(title: string): string {
   if (parts.length < 2) return title;
   const cut = parts.findIndex((part, i) => i > 0 && EVENT_TAIL.test(part));
   if (cut === -1) return title;
+  // A segment that is a real subtitle wearing a suffix keeps the subtitle:
+  // "Don't Look Back in Anger IMAX Early Access Screening" is the film's own
+  // name plus two suffixes, not a descriptor to discard.
+  const trimmed = (parts[cut] ?? '').replace(TRAILING_SUFFIX, '').trim();
+  if (trimmed.length > 0 && !EVENT_TAIL.test(trimmed)) {
+    return stripEventTail([...parts.slice(0, cut), trimmed].join(': '));
+  }
   const head = parts.slice(0, cut).join(': ').trim();
   return head.length > 0 ? head : title;
 }

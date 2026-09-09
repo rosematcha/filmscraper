@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildNotes, dateRange, humanList } from '../src/core/notes.js';
-import { DEFAULT_RENDER_OPTIONS, type AggregatedMovie, type RenderOptions } from '../src/core/types.js';
+import {
+  DEFAULT_RENDER_OPTIONS,
+  type AggregatedMovie,
+  type RenderOptions,
+} from '../src/core/types.js';
 
 const OPTS = DEFAULT_RENDER_OPTIONS;
 const NAMES = {
@@ -22,6 +26,10 @@ function movie(over: Partial<AggregatedMovie> = {}): AggregatedMovie {
     optional: new Map(),
     optionalDates: new Map(),
     isEvent: false,
+    events: new Map(),
+    eventDates: new Map(),
+    showings: [],
+    isFixture: false,
     sources: ['fandango'],
     languages: [],
     foreign: false,
@@ -59,7 +67,11 @@ describe('dateRange', () => {
   });
 
   it('crosses month boundaries', () => {
-    expect(dateRange('2026-08-30', '2026-09-01')).toEqual(['2026-08-30', '2026-08-31', '2026-09-01']);
+    expect(dateRange('2026-08-30', '2026-09-01')).toEqual([
+      '2026-08-30',
+      '2026-08-31',
+      '2026-09-01',
+    ]);
   });
 });
 
@@ -78,7 +90,10 @@ describe('buildNotes', () => {
       theaters: Array.from({ length: 12 }, (_, i) => `T${i}`),
       dates: window2,
       formats: new Map([
-        ['IMAX', ['Santikos Palladium IMAX', 'Regal Live Oak & RPX', 'AMC Rivercenter 11 with Alamo IMAX']],
+        [
+          'IMAX',
+          ['Santikos Palladium IMAX', 'Regal Live Oak & RPX', 'AMC Rivercenter 11 with Alamo IMAX'],
+        ],
         ['70MM', ['Santikos Palladium IMAX']],
         ['IMAX 70MM', ['AMC Rivercenter 11 with Alamo IMAX']],
       ]),
@@ -117,12 +132,12 @@ describe('buildNotes', () => {
       theaters: Array.from({ length: 8 }, (_, i) => `T${i}`),
       dates: ['2026-08-05'],
     });
-    expect(notes(m, window2)).toBe('August 5 only');
+    expect(notes(m, window2)).toBe('Wednesday only');
   });
 
   it('folds date and venue into one clause', () => {
     const m = movie({ theaters: ['Regal Live Oak & RPX'], dates: ['2026-08-05'] });
-    expect(notes(m, window2)).toBe('August 5 only at Regal Live Oak');
+    expect(notes(m, window2)).toBe('Wednesday only at Regal Live Oak');
   });
 
   it('names weekdays when a movie plays several days of a longer window', () => {
@@ -152,5 +167,110 @@ describe('buildNotes', () => {
     expect(notes(m, window2, { ...OPTS, showLanguage: true })).toBe(
       'Spanish dubbed at Regal Live Oak',
     );
+  });
+});
+
+describe('timed bookings', () => {
+  const week = dateRange('2026-08-03', '2026-08-09');
+  const showing = (date: string, theater: string, times: string[]) => ({
+    date,
+    theater,
+    times,
+    format: null,
+    sourceId: 'fandango',
+  });
+  const LIVE_OAK = 'Regal Live Oak & RPX';
+  const PALLADIUM = 'Santikos Palladium IMAX';
+
+  it('spells out a one-night booking with its time', () => {
+    const m = movie({
+      theaters: [LIVE_OAK],
+      dates: ['2026-08-05'],
+      showings: [showing('2026-08-05', LIVE_OAK, ['7:00p'])],
+    });
+    expect(notes(m, week)).toBe('Wednesday 7:00p at Regal Live Oak');
+  });
+
+  it('names each venue with its own time when they differ', () => {
+    const m = movie({
+      theaters: [LIVE_OAK, PALLADIUM],
+      dates: ['2026-08-05', '2026-08-08'],
+      showings: [
+        showing('2026-08-05', LIVE_OAK, ['7:00p']),
+        showing('2026-08-05', PALLADIUM, ['9:15p']),
+        showing('2026-08-08', PALLADIUM, ['2:00p']),
+      ],
+    });
+    expect(notes(m, week)).toBe(
+      'Wednesday at Regal Live Oak (7:00p) and Palladium (9:15p), Saturday 2:00p at Palladium',
+    );
+  });
+
+  it('falls back to dates when a calendar gave no time or the booking is busy', () => {
+    const untimed = movie({
+      theaters: [LIVE_OAK],
+      dates: ['2026-08-05'],
+      showings: [showing('2026-08-05', LIVE_OAK, [])],
+    });
+    expect(notes(untimed, week)).toBe('Wednesday only at Regal Live Oak');
+    const busy = movie({
+      theaters: [LIVE_OAK],
+      dates: ['2026-08-05'],
+      showings: [showing('2026-08-05', LIVE_OAK, ['1:00p', '4:00p', '7:00p'])],
+    });
+    expect(notes(busy, week)).toBe('Wednesday only at Regal Live Oak');
+  });
+
+  it('never times a film that plays the whole window', () => {
+    const m = movie({
+      theaters: [LIVE_OAK],
+      dates: week,
+      showings: week.map((d) => showing(d, LIVE_OAK, ['7:00p'])),
+    });
+    expect(notes(m, week)).toBe('Only at Regal Live Oak');
+  });
+});
+
+describe('run gaps, history and markers', () => {
+  const week = dateRange('2026-08-03', '2026-08-09');
+  const wide = Array.from({ length: 9 }, (_, i) => `T${i}`);
+  const withHistory = (m: AggregatedMovie, firstDate: string | null): string =>
+    buildNotes(m, week, week[0] ?? '', week.at(-1) ?? '', OPTS, NAMES, undefined, { firstDate });
+
+  it('says except for a run that skips a day', () => {
+    const m = movie({ theaters: wide, dates: week.filter((d) => d !== '2026-08-06') });
+    expect(notes(m, week)).toBe('Except Thursday');
+  });
+
+  it('says new this week when the ledger dates the film inside the window', () => {
+    const m = movie({ theaters: wide, dates: week });
+    expect(withHistory(m, '2026-08-03')).toBe('New this week');
+    expect(withHistory(m, '2026-07-01')).toBe('');
+    expect(withHistory(m, null)).toBe('');
+  });
+
+  it('reads a late start as a span, not an opening, for a film already running', () => {
+    const m = movie({ theaters: wide, dates: week.slice(2) });
+    expect(withHistory(m, null)).toBe('Opens Wednesday');
+    expect(withHistory(m, '2026-07-20')).toBe('Wednesday through Sunday');
+  });
+
+  it('describes a fixture as daily and never as opening or closing', () => {
+    const m = movie({
+      theaters: ['AMC Rivercenter 11 with Alamo IMAX'],
+      dates: week.slice(0, 3),
+      isFixture: true,
+    });
+    expect(notes(m, week)).toBe('Daily at Rivercenter');
+  });
+
+  it('names Q&A and early-access nights', () => {
+    const m = movie({
+      theaters: wide,
+      dates: week,
+      events: new Map([['Q&A', ['Regal Live Oak & RPX']]]),
+      eventDates: new Map([['Q&A', ['2026-08-06']]]),
+    });
+    expect(notes(m, week)).toBe('Q&A Thursday at Regal Live Oak');
   });
 });

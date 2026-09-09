@@ -20,6 +20,12 @@ interface AmenityRule {
   readonly label?: string;
   /** Lower sorts first among `format` entries — rarer formats lead the note. */
   readonly rank?: number;
+  /**
+   * An `event` marker worth naming in Notes. Fathom and Alternative Content
+   * describe the whole booking and are said by the table it lands in; a Q&A or
+   * an early-access night is a fact about specific showings.
+   */
+  readonly noted?: boolean;
 }
 
 /**
@@ -72,8 +78,8 @@ const ID_RULES: ReadonlyMap<number, AmenityRule> = new Map([
   // --- event markers ------------------------------------------------------
   [1182, { cls: 'event' }], // Fathom Features
   [1525, { cls: 'event' }], // Alternative Content (concert films, broadcasts)
-  [1171, { cls: 'event' }], // Q&A Event
-  [1380, { cls: 'event' }], // Early Access Screening
+  [1171, { cls: 'event', label: 'Q&A', noted: true }],
+  [1380, { cls: 'event', label: 'Early access', noted: true }],
 
   // --- comfort ------------------------------------------------------------
   [2011, { cls: 'comfort' }], // Reserved seating
@@ -117,9 +123,14 @@ const NAME_RULES: readonly (readonly [RegExp, AmenityRule])[] = [
       label: 'Accessibility devices',
     },
   ],
+  [/sensory\s+friendly/i, { cls: 'access', label: 'Sensory friendly' }],
   [/spanish/i, { cls: 'language', label: 'Spanish language' }],
   [/\b(language|dubbed|subtitled|subtitles?)\b/i, { cls: 'language' }],
 
+  [/q\s*&\s*a/i, { cls: 'event', label: 'Q&A', noted: true }],
+  [/early\s+access/i, { cls: 'event', label: 'Early access', noted: true }],
+  [/fan\s+event/i, { cls: 'event', label: 'Fan event', noted: true }],
+  [/bonus\s+content/i, { cls: 'event', label: 'Bonus content', noted: true }],
   [/fathom|anniversary|special\s+event|encore/i, { cls: 'event' }],
 ];
 
@@ -127,6 +138,8 @@ export interface ClassifiedAmenity {
   readonly cls: AmenityClass;
   readonly label: string;
   readonly rank: number;
+  /** True for the event markers that belong in Notes. */
+  readonly noted: boolean;
 }
 
 /** Default rank places unranked formats after every explicitly ranked one. */
@@ -135,16 +148,26 @@ const DEFAULT_RANK = 50;
 export function classifyAmenity(amenity: Amenity): ClassifiedAmenity {
   const byId = ID_RULES.get(amenity.id);
   if (byId) {
-    return { cls: byId.cls, label: byId.label ?? amenity.name, rank: byId.rank ?? DEFAULT_RANK };
+    return {
+      cls: byId.cls,
+      label: byId.label ?? amenity.name,
+      rank: byId.rank ?? DEFAULT_RANK,
+      noted: byId.noted === true,
+    };
   }
   for (const [pattern, rule] of NAME_RULES) {
     if (pattern.test(amenity.name)) {
-      return { cls: rule.cls, label: rule.label ?? amenity.name, rank: rule.rank ?? DEFAULT_RANK };
+      return {
+        cls: rule.cls,
+        label: rule.label ?? amenity.name,
+        rank: rule.rank ?? DEFAULT_RANK,
+        noted: rule.noted === true,
+      };
     }
   }
   // Unknown amenities are comfort by default: a new seating perk must never
   // leak into Notes just because we have not catalogued it yet.
-  return { cls: 'comfort', label: amenity.name, rank: DEFAULT_RANK };
+  return { cls: 'comfort', label: amenity.name, rank: DEFAULT_RANK, noted: false };
 }
 
 /** Amenity ids present in `ID_RULES`, for the vocabulary-drift test. */

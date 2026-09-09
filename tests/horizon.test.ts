@@ -237,7 +237,7 @@ describe('describeDates', () => {
   });
 
   it('keeps single-date events exact', () => {
-    expect(describeDates(['2026-08-05'], WEEK, WEEK[0] ?? '', HORIZON)).toBe('August 5 only');
+    expect(describeDates(['2026-08-05'], WEEK, WEEK[0] ?? '', HORIZON)).toBe('Wednesday only');
   });
 
   it('dates pre-sold events beyond the horizon', () => {
@@ -261,7 +261,7 @@ describe('describeDates', () => {
 
   it('treats the whole window as posted when the horizon is the last date', () => {
     const short = ['2026-08-04', '2026-08-05'];
-    expect(describeDates(['2026-08-05'], short, short[0] ?? '', '2026-08-05')).toBe('August 5 only');
+    expect(describeDates(['2026-08-05'], short, short[0] ?? '', '2026-08-05')).toBe('Wednesday only');
     expect(describeDates(short, short, short[0] ?? '', '2026-08-05')).toBeNull();
   });
 });

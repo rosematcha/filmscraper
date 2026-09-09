@@ -1,5 +1,5 @@
 import { classifyRun, EMPTY_RUN_WINDOW, type RunWindow } from './run.js';
-import type { AggregatedMovie } from './types.js';
+import type { AggregatedMovie, IsoDate, SortOrder } from './types.js';
 
 export const DRIVE_IN_SOURCE = 'stars-and-stripes';
 export const LIBRARY_SOURCE = 'sapl';
@@ -16,8 +16,10 @@ export const OPEN_CAPTION_LABEL = 'Open caption';
  *                  park screening does not make the multiplex booking free.
  * - `venue`      — everything one venue is showing, and the film leaves the
  *                  main table only when that venue is the sole place it plays.
+ * - `upcoming`   — films with no date inside the window at all, drawn from
+ *                  whatever the dataset knows about the weeks after it.
  */
-export type SectionMode = 'claims' | 'duplicates' | 'venue';
+export type SectionMode = 'claims' | 'duplicates' | 'venue' | 'upcoming';
 
 /**
  * Which table wins a film that qualifies for several.
@@ -34,6 +36,8 @@ export type ClaimRank = 0 | 1;
 export interface SectionContext extends RunWindow {
   /** Year the run is measured against; injected so tests stay stable. */
   readonly currentYear: number;
+  /** Earliest date the ledger ever listed a film for, when it has one. */
+  readonly firstDateOf?: (movie: AggregatedMovie) => IsoDate | null;
 }
 
 /**
@@ -56,6 +60,13 @@ export interface SectionDef {
   readonly claimRank?: ClaimRank;
   readonly defaultOn: boolean;
   /**
+   * Row order this table reads best in. A list of one-night screenings is
+   * read by date; a list of wide releases by reach. The reader's own sort
+   * choice overrides it only when they ask for something other than the
+   * default.
+   */
+  readonly order?: SortOrder;
+  /**
    * Source whose venues this table is about.
    *
    * A venue asked for by name stops being subject to the radius: the drive-in
@@ -73,13 +84,19 @@ export interface SectionDef {
  * Mystery and secret screenings carry no amenity marker at all.
  */
 const EVENT_TITLE =
-  /\b(mystery|secret|anniversary|encore|fest\b|meet-?up|unseen|marathon|double\s+feature|sing-?along|q\s*(&|and)\s*a|fan\s+event|in\s+concert|live\s+in\s+cinemas?)\b/i;
+  /\b(mystery|secret|anniversary|encore|fest\b|meet-?up|unseen|marathon|double\s+feature|sing-?along|q\s*(&|and)\s*a|fan\s+event|in\s+concert|live\s+in\s+cinemas?|live\s+viewing|re-?release|final\s+cut|remaster(ed)?|restor(ed|ation)|4k|anime\s+nights?|rifftrax|mst3k|screen\s+unseen|mystery\s+machine|presented\s+by)\b/i;
 
 /**
- * A film at least this many years old, playing a short run, is a revival
- * rather than a late leg of its original release.
+ * A film at least this many years old is a revival whatever its run looks
+ * like: a week of *The Sandlot* is repertory programming, not a late leg.
  */
-const REVIVAL_AGE_YEARS = 2;
+const REVIVAL_AGE_YEARS = 5;
+/**
+ * Between two and five years old, only a short booking reads as a revival.
+ * A two-year-old family film still playing five venues across a weekend is
+ * the tail of its release.
+ */
+const LATE_LEG_AGE_YEARS = 2;
 const REVIVAL_MAX_DATES = 2;
 
 /**
@@ -89,15 +106,17 @@ const REVIVAL_MAX_DATES = 2;
  * everything in current release and omits it entirely on catalogue titles, so
  * "Paddington 2" and "The Untouchables" announce themselves. Amenity markers
  * cover Fathom, Q&A and concert broadcasts, and the title pattern catches
- * mystery nights, which carry no marker of any kind.
+ * mystery nights, which carry no marker of any kind. A fixture is never an
+ * event: it plays every day of the year.
  */
 export function isSpecialEvent(movie: AggregatedMovie, currentYear: number): boolean {
+  if (movie.isFixture) return false;
   if (movie.isEvent) return true;
   if (EVENT_TITLE.test(movie.title)) return true;
   if (movie.releaseYear === null) return true;
-  return (
-    currentYear - movie.releaseYear >= REVIVAL_AGE_YEARS && movie.dates.length <= REVIVAL_MAX_DATES
-  );
+  const age = currentYear - movie.releaseYear;
+  if (age >= REVIVAL_AGE_YEARS) return true;
+  return age >= LATE_LEG_AGE_YEARS && movie.dates.length <= REVIVAL_MAX_DATES;
 }
 
 export function hasOpenCaptions(movie: AggregatedMovie): boolean {
@@ -114,13 +133,18 @@ export function hasOpenCaptions(movie: AggregatedMovie): boolean {
  * booking elsewhere says nothing about the captioned one.
  */
 export function openCaptionEntry(movie: AggregatedMovie): AggregatedMovie {
+  const theaters = new Set(movie.optional.get(OPEN_CAPTION_LABEL) ?? []);
+  const dates = new Set(movie.optionalDates.get(OPEN_CAPTION_LABEL) ?? []);
   return {
     ...movie,
-    theaters: movie.optional.get(OPEN_CAPTION_LABEL) ?? [],
-    dates: movie.optionalDates.get(OPEN_CAPTION_LABEL) ?? [],
+    theaters: [...theaters],
+    dates: [...dates],
+    showings: movie.showings.filter((s) => theaters.has(s.theater) && dates.has(s.date)),
     formats: new Map(),
     optional: new Map(),
     optionalDates: new Map(),
+    events: new Map(),
+    eventDates: new Map(),
   };
 }
 
@@ -132,7 +156,15 @@ export function openCaptionEntry(movie: AggregatedMovie): AggregatedMovie {
  * multiplex must not borrow the week to describe the Saturday.
  */
 export function freeEntry(movie: AggregatedMovie): AggregatedMovie {
-  return { ...movie, theaters: movie.freeVenues, dates: movie.freeDates, formats: new Map() };
+  const venues = new Set(movie.freeVenues);
+  const dates = new Set(movie.freeDates);
+  return {
+    ...movie,
+    theaters: movie.freeVenues,
+    dates: movie.freeDates,
+    showings: movie.showings.filter((s) => venues.has(s.theater) && dates.has(s.date)),
+    formats: new Map(),
+  };
 }
 
 /**
@@ -141,6 +173,12 @@ export function freeEntry(movie: AggregatedMovie): AggregatedMovie {
  * agree about what wide means.
  */
 export const WIDE_THEATER_FLOOR = 4;
+
+/**
+ * A coming-soon row names its venues up to this many. Higher than the Notes
+ * limit because an advance booking at five venues is itself the news.
+ */
+export const NAMED_THEATER_LIMIT_FOR_UPCOMING = 5;
 
 /**
  * Whether a reach filter drops this film.
@@ -161,43 +199,68 @@ function playsAt(movie: AggregatedMovie, sourceId: string): boolean {
   return movie.sources.includes(sourceId);
 }
 
+/** The run shape, judged with whatever the ledger knows about the film. */
+function shapeOf(movie: AggregatedMovie, ctx: SectionContext): string {
+  return classifyRun(movie.dates, ctx, { firstDate: ctx.firstDateOf?.(movie) ?? null }).shape;
+}
+
+/**
+ * Whether the film's first-ever listed date falls inside this window.
+ *
+ * Catches what the shape alone cannot: a film that opened Friday and now
+ * plays every day of a Wednesday-to-Tuesday window looks like it has always
+ * been there.
+ */
+export function opensWithin(movie: AggregatedMovie, ctx: SectionContext): boolean {
+  const first = ctx.firstDateOf?.(movie);
+  const start = ctx.windowDates[0];
+  if (typeof first !== 'string' || start === undefined) return false;
+  return first >= start;
+}
+
 /**
  * Every table, in render order.
  *
- * What changed this week leads — what opens, then what is about to go — and
- * the standing partitions follow. Render order is not claim order: these two
- * carry `claimRank: 1` so they collect only what the identity tables below
- * have not already taken.
- *
- * Both start off. Whether a run has ended is judged against how far the
- * schedule reaches, and one scrape cannot tell a theater that has stopped
- * booking a film from one that has not posted next week yet. The posting
- * backlog is accumulating the history that answers it; until then these two
- * stay a menu away rather than splitting the table on a guess.
+ * What is coming leads — what is on sale for later, what opens, what is about
+ * to go — and the standing partitions follow. Render order is not claim
+ * order: the timing tables carry `claimRank: 1` so they collect only what the
+ * identity tables below have not already taken.
  */
 export const SECTIONS: readonly SectionDef[] = [
+  {
+    id: 'coming',
+    heading: 'Coming soon',
+    label: 'Coming soon',
+    hint: 'On sale for dates after the window',
+    mode: 'upcoming',
+    defaultOn: true,
+    order: 'soonest',
+    match: (movie) => !movie.isFixture,
+  },
   {
     id: 'opens',
     heading: 'Opens this week',
     label: 'Opens this week',
-    hint: 'Films that start partway through the window',
+    hint: 'Films whose run starts inside the window',
     mode: 'claims',
     claimRank: 1,
-    defaultOn: false,
+    defaultOn: true,
+    order: 'soonest',
     match: (movie, ctx) => {
-      const { shape } = classifyRun(movie.dates, ctx);
-      return shape === 'opens' || shape === 'presale-opens';
+      if (movie.isFixture) return false;
+      const shape = shapeOf(movie, ctx);
+      return shape === 'opens' || shape === 'presale-opens' || opensWithin(movie, ctx);
     },
   },
   {
     id: 'last-chance',
     heading: 'Last chance',
     label: 'Last chance',
-    hint: 'Runs that end before the posted schedule does',
+    hint: 'Runs that end while the rest of the schedule goes on',
     mode: 'claims',
     claimRank: 1,
-    defaultOn: false,
-    match: (movie, ctx) => classifyRun(movie.dates, ctx).shape === 'closing',
+    defaultOn: true,
+    match: (movie, ctx) => !movie.isFixture && shapeOf(movie, ctx) === 'closing',
   },
   {
     id: 'free',
@@ -206,6 +269,7 @@ export const SECTIONS: readonly SectionDef[] = [
     hint: 'Venues whose listing says admission is free',
     mode: 'duplicates',
     defaultOn: true,
+    order: 'soonest',
     match: (movie) => movie.freeVenues.length > 0,
     project: freeEntry,
   },
@@ -225,6 +289,7 @@ export const SECTIONS: readonly SectionDef[] = [
     hint: 'Revivals, mystery nights and broadcasts',
     mode: 'claims',
     defaultOn: true,
+    order: 'soonest',
     match: (movie, ctx) => isSpecialEvent(movie, ctx.currentYear),
   },
   {
@@ -245,6 +310,7 @@ export const SECTIONS: readonly SectionDef[] = [
     mode: 'venue',
     defaultOn: false,
     source: LIBRARY_SOURCE,
+    order: 'soonest',
     match: (movie) => playsAt(movie, LIBRARY_SOURCE),
   },
   {
@@ -315,6 +381,74 @@ export function unfilteredSources(options: SectionOptions): Set<string> {
   return out;
 }
 
+/** What the builder knows beyond the window's own films. */
+export interface SectionExtras {
+  /** Films on sale only for dates after the window, for the coming-soon table. */
+  readonly upcoming?: readonly AggregatedMovie[];
+  /** Earliest listed date per film, from the ledger. */
+  readonly firstDateOf?: (movie: AggregatedMovie) => IsoDate | null;
+}
+
+interface Buckets {
+  readonly venue: readonly SectionDef[];
+  readonly claims: readonly SectionDef[];
+  readonly duplicates: readonly SectionDef[];
+}
+
+function bucketsOf(active: readonly SectionDef[]): Buckets {
+  return {
+    venue: active.filter((s) => s.mode === 'venue'),
+    // Sorted by rank rather than taken in registry order: "Last chance" reads
+    // first but claims last, so a non-English film ending its run stays under
+    // "Not in English" instead of being pulled out of it.
+    claims: active
+      .filter((s) => s.mode === 'claims')
+      .sort((a, b) => (a.claimRank ?? 0) - (b.claimRank ?? 0)),
+    duplicates: active.filter((s) => s.mode === 'duplicates'),
+  };
+}
+
+/**
+ * Place one film, returning whether some table took it out of the main list.
+ *
+ * Venue tables are answered first and unconditionally: "what is on at the
+ * library this week" is a question about the venue, and nearly every film it
+ * screens is also a revival, so letting the events table claim the row first
+ * would leave the library table permanently empty. The reach filters prune the
+ * listing, not the venue question, which is why they are checked after.
+ */
+function placeMovie(
+  movie: AggregatedMovie,
+  buckets: Buckets,
+  collected: Map<string, AggregatedMovie[]>,
+  ctx: SectionContext,
+  hidden: boolean,
+): boolean {
+  let claimed = false;
+  for (const section of buckets.venue) {
+    if (!section.match(movie, ctx)) continue;
+    collected.get(section.id)?.push(movie);
+    // A wide release that also plays a multiplex keeps its main-table row;
+    // only a film with nowhere else to play moves.
+    if (movie.sources.length === 1) claimed = true;
+  }
+  if (hidden) return true;
+  // A row belongs to one partition, not to every partition it qualifies for:
+  // a revival that is also non-English is listed once, under whichever table
+  // comes first.
+  for (const section of buckets.claims) {
+    if (claimed) break;
+    if (!section.match(movie, ctx)) continue;
+    collected.get(section.id)?.push(movie);
+    claimed = true;
+  }
+  for (const section of buckets.duplicates) {
+    if (!section.match(movie, ctx)) continue;
+    collected.get(section.id)?.push(section.project ? section.project(movie) : movie);
+  }
+  return claimed;
+}
+
 /**
  * Split the aggregated films into the tables the output will carry.
  *
@@ -328,56 +462,29 @@ export function buildSections(
   movies: readonly AggregatedMovie[],
   options: SectionOptions,
   window: RunWindow = EMPTY_RUN_WINDOW,
+  extras: SectionExtras = {},
 ): MovieSection[] {
-  const ctx: SectionContext = { ...window, currentYear: options.currentYear };
+  const ctx: SectionContext = {
+    ...window,
+    currentYear: options.currentYear,
+    ...(extras.firstDateOf ? { firstDateOf: extras.firstDateOf } : {}),
+  };
   const active = SECTIONS.filter((s) => options.tables.includes(s.id));
   const collected = new Map<string, AggregatedMovie[]>(active.map((s) => [s.id, []]));
-  const byMode = {
-    venue: active.filter((s) => s.mode === 'venue'),
-    // Sorted by rank rather than taken in registry order: "Last chance" reads
-    // first but claims last, so a non-English film ending its run stays under
-    // "Not in English" instead of being pulled out of it.
-    claims: active
-      .filter((s) => s.mode === 'claims')
-      .sort((a, b) => (a.claimRank ?? 0) - (b.claimRank ?? 0)),
-    duplicates: active.filter((s) => s.mode === 'duplicates'),
-  };
+  const buckets = bucketsOf(active);
   const main: AggregatedMovie[] = [];
 
   for (const movie of movies) {
     if (movie.foreign && options.excludeForeign) continue;
+    const taken = placeMovie(movie, buckets, collected, ctx, hiddenByReach(movie, options));
+    if (!taken) main.push(movie);
+  }
 
-    // A venue table is asked for by name, so it answers in full: the reach
-    // filters prune the listing, not the question "what is on at the library".
-    // The same reasoning already exempts these tables from the radius.
-    const hidden = hiddenByReach(movie, options);
-    let claimed = false;
-    // Venue tables are answered first and unconditionally: "what is on at the
-    // library this week" is a question about the venue, and nearly every film
-    // it screens is also a revival, so letting the events table claim the row
-    // first would leave the library table permanently empty.
-    for (const section of byMode.venue) {
-      if (!section.match(movie, ctx)) continue;
-      collected.get(section.id)?.push(movie);
-      // A wide release that also plays a multiplex keeps its main-table row;
-      // only a film with nowhere else to play moves.
-      if (movie.sources.length === 1) claimed = true;
-    }
-    if (hidden) continue;
-    // A row belongs to one partition, not to every partition it qualifies for:
-    // a revival that is also non-English is listed once, under whichever table
-    // comes first.
-    for (const section of byMode.claims) {
-      if (claimed) break;
-      if (!section.match(movie, ctx)) continue;
-      collected.get(section.id)?.push(movie);
-      claimed = true;
-    }
-    for (const section of byMode.duplicates) {
-      if (!section.match(movie, ctx)) continue;
-      collected.get(section.id)?.push(section.project ? section.project(movie) : movie);
-    }
-    if (!claimed) main.push(movie);
+  for (const section of active.filter((s) => s.mode === 'upcoming')) {
+    const upcoming = (extras.upcoming ?? []).filter(
+      (movie) => section.match(movie, ctx) && !(movie.foreign && options.excludeForeign),
+    );
+    collected.get(section.id)?.push(...upcoming);
   }
 
   const sections: MovieSection[] = [{ id: 'main', heading: null, movies: main }];

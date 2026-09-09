@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { displayTitle, extractYear, mergeKey, movieIdFromHref, stripYear } from '../src/core/titles.js';
+import {
+  displayTitle,
+  extractYear,
+  mergeKey,
+  movieIdFromHref,
+  stripYear,
+} from '../src/core/titles.js';
 
 describe('stripYear', () => {
   it('removes the trailing release year', () => {
@@ -109,5 +115,23 @@ describe('event-tail merging', () => {
     expect(mergeKey("Gabby's Dollhouse: The Movie")).not.toBe(mergeKey("Gabby's Dollhouse"));
     expect(mergeKey('Hadestown: The Musical')).not.toBe(mergeKey('Hadestown'));
     expect(mergeKey('ATEEZ : LIGHT THE WAY IN CINEMAS')).not.toBe(mergeKey('ATEEZ'));
+  });
+});
+
+describe('suffixed subtitles', () => {
+  it('keeps a subtitle that only wears a suffix', () => {
+    // The early-access night is a showing of the wide release, not a film
+    // called "Oasis".
+    expect(mergeKey("Oasis: Don't Look Back in Anger IMAX Early Access Screening")).toBe(
+      mergeKey("Oasis: Don't Look Back in Anger"),
+    );
+    expect(mergeKey("Oasis: Don't Look Back in Anger")).not.toBe(mergeKey('Oasis'));
+  });
+
+  it('folds restorations and remasters onto the film', () => {
+    expect(mergeKey('Akira 4K Re-Release')).toBe(mergeKey('Akira'));
+    expect(mergeKey('Train to Busan - 10th Anniversary Remastered & Revived')).toBe(
+      mergeKey('Train to Busan'),
+    );
   });
 });

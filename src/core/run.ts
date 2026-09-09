@@ -10,6 +10,8 @@ import type { IsoDate } from './types.js';
  *
  * - `throughout`     — plays every day we know about.
  * - `opens`          — starts partway through and runs to the edge of what we know.
+ * - `span`           — the same shape, for a film history says was already
+ *                      running: a mid-week gap, not an opening.
  * - `presale-opens`  — on sale before the schedule is posted; no reliable dates yet.
  * - `closing`        — runs from the start of the window and stops before the horizon.
  * - `single`         — one date only.
@@ -17,13 +19,7 @@ import type { IsoDate } from './types.js';
  * - `none`           — nothing to say.
  */
 export type RunShape =
-  | 'throughout'
-  | 'opens'
-  | 'presale-opens'
-  | 'closing'
-  | 'single'
-  | 'listed'
-  | 'none';
+  'throughout' | 'opens' | 'span' | 'presale-opens' | 'closing' | 'single' | 'listed' | 'none';
 
 /** Below this many dates, listing the days beats describing a run. */
 export const MIN_DATES_FOR_RUN = 3;
@@ -110,6 +106,17 @@ export function detectFrontier(
   return frontier;
 }
 
+/**
+ * What the ledger remembers about a film, when it remembers anything.
+ *
+ * One scrape cannot tell a Thursday opening from a film that played last
+ * week and skips Wednesday; the first date it was ever listed for can.
+ */
+export interface RunHistory {
+  /** Earliest date the film was ever listed for, across every run. */
+  readonly firstDate?: IsoDate | null;
+}
+
 export interface RunClassification {
   readonly shape: RunShape;
   /** The date the phrasing hangs on: the opening day, or the last day of a closing run. */
@@ -126,25 +133,32 @@ export interface RunClassification {
 export function classifyRun(
   playedDates: readonly IsoDate[],
   window: RunWindow,
+  history: RunHistory = {},
 ): RunClassification {
   const { windowDates, knownFrom, horizon } = window;
   if (playedDates.length === 0 || windowDates.length === 0) return { shape: 'none', date: null };
+  // Listed before this window began: whatever the dates look like, the film
+  // is not opening. Absent history the shape alone has to decide.
+  const seenBefore =
+    typeof history.firstDate === 'string' && history.firstDate < (windowDates[0] ?? '');
 
   const frontier = window.frontier ?? horizon;
   const known = windowDates.filter((d) => d >= knownFrom && d <= horizon);
   const playedKnown = playedDates.filter((d) => d >= knownFrom && d <= horizon);
-  const first = playedDates[0] ?? '';
+  const firstPlayed = playedDates[0] ?? '';
   const lastPlayed = playedDates.at(-1) ?? '';
 
   // Nothing inside the reliable range: a pre-sold future event, or a title
   // whose only showings today have already started.
   if (playedKnown.length === 0 || known.length === 0) {
-    if (playedDates.length === 1) return { shape: 'single', date: first };
+    if (playedDates.length === 1) return { shape: 'single', date: firstPlayed };
     // A wide release that goes on sale before the schedule is posted covers
     // every remaining day of the window. Enumerating those days reads as a
     // limited engagement when it is the opposite.
-    if (opensAndRuns(playedDates, windowDates)) return { shape: 'presale-opens', date: first };
-    return { shape: 'listed', date: first };
+    if (opensAndRuns(playedDates, windowDates)) {
+      return { shape: seenBefore ? 'span' : 'presale-opens', date: firstPlayed };
+    }
+    return { shape: 'listed', date: firstPlayed };
   }
 
   const windowStart = known[0] ?? '';
@@ -179,14 +193,16 @@ export function classifyRun(
     if (firstKnown === windowStart) return { shape: 'throughout', date: firstKnown };
     // One listed date that happens to be the last we know about is not evidence
     // of an opening — Willy Wonka's single Wednesday is a one-night event.
-    if (playedDates.length === 1) return { shape: 'single', date: first };
-    return { shape: 'opens', date: firstKnown };
+    if (playedDates.length === 1) return { shape: 'single', date: firstPlayed };
+    return { shape: seenBefore ? 'span' : 'opens', date: firstKnown };
   }
 
   // A couple of scattered early dates and then an unbroken run to the
   // frontier is the preview pattern: the film opens the day the run proper
   // starts, and the Tuesday preview must not read as a dying engagement.
-  if (playedDates.length >= MIN_DATES_FOR_RUN && lastPlayed >= frontier) {
+  // History overrules it: a film that played last week and skips Thursday
+  // has the same dates and is not opening on Friday.
+  if (!seenBefore && playedDates.length >= MIN_DATES_FOR_RUN && lastPlayed >= frontier) {
     for (let start = 1; start <= 2 && start < playedDates.length; start += 1) {
       const tail = playedDates.slice(start);
       const tailStart = tail[0] ?? '';
@@ -199,6 +215,6 @@ export function classifyRun(
     }
   }
 
-  if (playedDates.length === 1) return { shape: 'single', date: first };
-  return { shape: 'listed', date: first };
+  if (playedDates.length === 1) return { shape: 'single', date: firstPlayed };
+  return { shape: 'listed', date: firstPlayed };
 }

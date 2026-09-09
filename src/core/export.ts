@@ -1,4 +1,4 @@
-import { aggregate, type AliasConfig } from './aggregate.js';
+import { aggregate, sourceRank, type AliasConfig } from './aggregate.js';
 import { classifyAmenity } from './amenities.js';
 import { chainLabel, chainOf } from './chains.js';
 import type { Dataset } from './dataset.js';
@@ -168,13 +168,6 @@ interface FilmIdentity {
   readonly title: string;
   readonly href: string;
   readonly releaseYear: number | null;
-}
-
-/** Venue-owned listings outrank third-party programme mirrors. */
-function sourceRank(sourceId: string): number {
-  if (sourceId === 'fandango') return 100;
-  if (sourceId.startsWith('slab-')) return 10;
-  return 50;
 }
 
 interface IdentityCandidate {
